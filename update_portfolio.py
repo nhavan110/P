@@ -16,7 +16,7 @@ from vnstock import Vnstock
 BASE_DIR     = Path(__file__).resolve().parent
 EXCEL_FILE   = BASE_DIR / "data" / "Portfolio.xlsx"
 OUTPUT_FILE  = BASE_DIR / "data" / "MyPortfolio.xlsx"
-JSON_FILE    = BASE_DIR / "data" / "data.json"
+JSON_FILE    = BASE_DIR / "data.json"   # ở gốc repo, khớp với fetch('data.json') trong index.html
 MANUAL_FILE  = BASE_DIR / "manual_entries.csv"
 SHEET_NAME   = "Sheet1"
 VNI_START    = "2022-06-01"
@@ -168,7 +168,8 @@ def get_holdings(dates: pd.Series) -> pd.DataFrame:
         (datetime(2026,  7,  6), datetime(2026,  7,  7), dict(b=440, c=300, d=100, h=400, margin=22000000)),
         (datetime(2026,  7,  8), datetime(2026,  7,  8), dict(b=440, c=1100, d=100, h=400, margin=36000000)),
         (datetime(2026,  7,  9), datetime(2026,  7, 22), dict(b=440, c=1600, d=100, h=400, margin=43000000)),
-        (datetime(2026,  7, 23), datetime(2099,  7,  8), dict(b=440, c=1600, d=100, h=400, margin=33000000)),
+        (datetime(2026,  7, 23), datetime(2026,  7, 26), dict(b=440, c=1600, d=100, h=400, margin=33000000)),
+        (datetime(2026,  7, 27), datetime(2099,  7,  8), dict(b=440, c=1600, d=100, h=400, margin=28000000)),
     ]
     cols = ["b", "c", "d", "e", "f", "g", "h", "margin"]
     result = pd.DataFrame(0, index=dates.index, columns=cols)
@@ -256,10 +257,15 @@ df_pr["date"] = df_pr["date"].dt.strftime("%d/%m/%Y")
 
 
 # ── 10. XUẤT MyPortfolio.xlsx ─────────────────────────────────────────────────
-EXPORT_DROP = ["DR+1", "DR+1(VNI)", "CR+1", "CR+1(VNI)", "CR(VNI)",
-               "MonthYear", "Cumulative_DR_M", "Year", "Year_tmp",
-               "Cumulative_DR_Y", "Cumulative_DR_Y(VNI)"]
-df_export = df_pr.drop(columns=[c for c in EXPORT_DROP if c in df_pr.columns])
+# Thứ tự cột cố định theo yêu cầu — "Sharpe ratio" và "Max drawdown" (dạng công
+# thức Excel) được chèn thêm ở bước 11a ngay sau khi ghi file này, nên ở đây
+# chỉ cần các cột số liệu gốc, không lấy 2 cột Sharpe/MaxDrawdown dạng số
+# (chỉ dùng riêng cho JSON dashboard).
+EXPORT_COLUMNS = [
+    "date", "HPG", "TCB", "FPT", "PNJ", "FRT", "MWG", "MBB", "VNINDEX",
+    "E1", "W", "E0", "D", "DR", "DR(VNI)", "CR", "MR", "YR", "YR(VNI)",
+]
+df_export = df_pr[[c for c in EXPORT_COLUMNS if c in df_pr.columns]].copy()
 df_export.to_excel(OUTPUT_FILE, index=False)
 
 
@@ -405,6 +411,18 @@ print(f"✅ Đã lưu: {OUTPUT_FILE}")
 
 
 # ── 12. XUẤT JSON CHO WEB DASHBOARD ──────────────────────────────────────────
+def safe_num(x):
+    """Trả về float hợp lệ, hoặc None nếu là NaN/Infinity (JSON chuẩn không
+    chấp nhận NaN/Infinity — trình duyệt sẽ báo lỗi parse nếu để lọt vào)."""
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(v):
+        return None
+    return v
+
+
 def export_json(df: pd.DataFrame, path: Path) -> None:
     records = df.copy()
     records["date"] = pd.to_datetime(records["date"], format="%d/%m/%Y")
@@ -415,21 +433,30 @@ def export_json(df: pd.DataFrame, path: Path) -> None:
         "date", "E1", "DR", "DR(VNI)", "CR", "CR(VNI)",
         "MR", "YR", "YR(VNI)", "Sharpe", "MaxDrawdown",
     ] if c in records.columns]
-    history = records[keep_cols].fillna(0).to_dict(orient="records")
+
+    history = []
+    for _, row in records[keep_cols].iterrows():
+        rec = {"date": row["date"]}
+        for c in keep_cols:
+            if c == "date":
+                continue
+            rec[c] = safe_num(row[c])
+        history.append(rec)
 
     latest = records.iloc[-1]
     summary = {
         "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "portfolio_value": float(latest.get("E1", 0)),
-        "cumulative_return": float(latest.get("CR", 0)),
-        "cumulative_return_vni": float(latest.get("CR(VNI)", 0)),
-        "sharpe_ratio": float(latest.get("Sharpe", 0)) if pd.notna(latest.get("Sharpe", np.nan)) else None,
-        "max_drawdown": float(latest.get("MaxDrawdown", 0)) if pd.notna(latest.get("MaxDrawdown", np.nan)) else None,
+        "portfolio_value": safe_num(latest.get("E1")),
+        "cumulative_return": safe_num(latest.get("CR")),
+        "cumulative_return_vni": safe_num(latest.get("CR(VNI)")),
+        "sharpe_ratio": safe_num(latest.get("Sharpe")),
+        "max_drawdown": safe_num(latest.get("MaxDrawdown")),
     }
 
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
-        json.dump({"summary": summary, "history": history}, f, ensure_ascii=False, indent=2)
+        json.dump({"summary": summary, "history": history}, f,
+                   ensure_ascii=False, indent=2, allow_nan=False)
     print(f"✅ Đã xuất: {path}")
 
 
