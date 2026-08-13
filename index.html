@@ -7,10 +7,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <script>
-  if (typeof Chart === 'undefined') {
-    document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"><\/script>');
+  if (typeof LightweightCharts === 'undefined') {
+    document.write('<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"><\/script>');
   }
 </script>
 <style>
@@ -23,7 +23,7 @@
     --mint:#3ddc97;
     --coral:#f8615a;
     --amber:#f0b64c;
-    --line-vni:#4a5a6a;
+    --line-vni:#7a8ea3;
   }
   *{box-sizing:border-box; margin:0; padding:0;}
   body{
@@ -86,19 +86,51 @@
     background:var(--panel);
     border:1px solid var(--panel-border);
     border-radius:14px;
-    padding:18px 14px 10px;
+    padding:18px 14px 14px;
     margin-bottom:16px;
   }
   .chart-title{
     font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.1em;
     margin-bottom:12px; padding:0 4px;
-    display:flex; justify-content:space-between; align-items:center;
+    display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;
   }
-  .legend{display:flex; gap:14px; font-size:11px;}
+  .legend{display:flex; gap:14px; font-size:11px; text-transform:none; letter-spacing:0;}
   .legend span{display:flex; align-items:center; gap:5px;}
   .dot{width:8px; height:8px; border-radius:50%; display:inline-block;}
 
-  canvas{max-height:260px;}
+  .chart-controls{
+    display:flex; flex-wrap:wrap; gap:8px;
+    margin-bottom:12px; padding:0 4px;
+  }
+  .seg{
+    display:flex; background:var(--bg); border:1px solid var(--panel-border);
+    border-radius:8px; overflow:hidden;
+  }
+  .seg button{
+    background:transparent; border:none; color:var(--muted);
+    font-family:'JetBrains Mono', monospace; font-size:11px; font-weight:500;
+    padding:6px 11px; cursor:pointer; transition:background .15s, color .15s;
+    border-right:1px solid var(--panel-border);
+    white-space:nowrap;
+  }
+  .seg button:last-child{border-right:none;}
+  .seg button.active{background:var(--mint); color:#04231a; font-weight:700;}
+  .seg button:hover:not(.active){color:var(--text);}
+
+  .chart-wrap{position:relative;}
+  #chartContainer{width:100%; height:280px;}
+
+  .chart-tooltip{
+    position:absolute; top:6px; left:6px; pointer-events:none;
+    background:rgba(10,14,18,0.92); border:1px solid var(--panel-border);
+    border-radius:8px; padding:8px 10px; font-size:11px; line-height:1.6;
+    color:var(--text); display:none; z-index:5; white-space:nowrap;
+  }
+  .chart-tooltip .tt-date{color:var(--muted); margin-bottom:3px; font-size:10px; text-transform:uppercase; letter-spacing:0.05em;}
+  .chart-tooltip .tt-row{display:flex; gap:8px; justify-content:space-between;}
+  .chart-tooltip .tt-row .tt-lbl{color:var(--muted);}
+  .chart-tooltip .tt-up{color:var(--mint);}
+  .chart-tooltip .tt-down{color:var(--coral);}
 
   .empty{
     text-align:center; padding:60px 20px; color:var(--muted); font-size:13px; line-height:1.6;
@@ -186,77 +218,245 @@ function render(json) {
 
     <div class="chart-panel">
       <div class="chart-title">
-        <span>Lợi nhuận tích luỹ theo thời gian</span>
-        <span class="legend">
+        <span>Biểu đồ hiệu suất</span>
+        <span class="legend" id="chartLegend">
           <span><span class="dot" style="background:var(--mint)"></span>Danh mục</span>
-          <span><span class="dot" style="background:var(--line-vni)"></span>VNINDEX</span>
+          <span id="vniLegendItem"><span class="dot" style="background:var(--line-vni)"></span>VNINDEX</span>
         </span>
       </div>
-      <canvas id="crChart"></canvas>
+      <div class="chart-controls">
+        <div class="seg" id="metricSeg">
+          <button data-v="value" class="active" type="button">Giá trị (đ)</button>
+          <button data-v="pct" type="button">% Lợi nhuận</button>
+        </div>
+        <div class="seg" id="typeSeg">
+          <button data-v="candle" class="active" type="button">Nến</button>
+          <button data-v="line" type="button">Đường</button>
+        </div>
+        <div class="seg" id="tfSeg">
+          <button data-v="D" class="active" type="button">Ngày</button>
+          <button data-v="W" type="button">Tuần</button>
+          <button data-v="M" type="button">Tháng</button>
+        </div>
+        <div class="seg" id="rangeSeg">
+          <button data-v="1M" type="button">1T</button>
+          <button data-v="3M" type="button">3T</button>
+          <button data-v="6M" type="button">6T</button>
+          <button data-v="1Y" type="button">1N</button>
+          <button data-v="ALL" class="active" type="button">Tất cả</button>
+        </div>
+      </div>
+      <div class="chart-wrap">
+        <div id="chartContainer"></div>
+        <div class="chart-tooltip" id="chartTooltip"></div>
+      </div>
     </div>
   `;
 
   try {
-    drawChart(hist);
+    initChart(hist);
   } catch (e) {
     console.error('Không vẽ được biểu đồ:', e);
-    const panel = document.querySelector('.chart-panel');
+    const panel = document.querySelector('.chart-panel .chart-wrap');
     if (panel) {
-      panel.innerHTML = '<div style="padding:20px 4px;color:var(--muted);font-size:12px;">Không tải được thư viện biểu đồ (Chart.js). Các số liệu khác vẫn hiển thị bình thường ở trên.</div>';
+      panel.innerHTML = '<div style="padding:20px 4px;color:var(--muted);font-size:12px;">Không tải được thư viện biểu đồ. Các số liệu khác vẫn hiển thị bình thường ở trên.</div>';
     }
   }
 }
 
-function drawChart(hist) {
-  const ctx = document.getElementById('crChart');
-  const labels = hist.map(r => r.date);
-  const cr = hist.map(r => (r.CR ?? 0) * 100);
-  const crVni = hist.map(r => (r['CR(VNI)'] ?? 0) * 100);
+// ── CHART (TradingView Lightweight Charts) ─────────────────────────────────
+function initChart(hist) {
+  if (typeof LightweightCharts === 'undefined' || !hist.length) return;
 
-  new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [
-        {
-          label: 'Danh mục',
-          data: cr,
-          borderColor: '#3ddc97',
-          backgroundColor: 'rgba(61,220,151,0.08)',
-          borderWidth: 2,
-          pointRadius: 0,
-          fill: true,
-          tension: 0.15,
-        },
-        {
-          label: 'VNINDEX',
-          data: crVni,
-          borderColor: '#4a5a6a',
-          borderWidth: 1.5,
-          pointRadius: 0,
-          fill: false,
-          tension: 0.15,
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      plugins: { legend: { display: false } },
-      scales: {
-        x: {
-          ticks: { color: '#7c8b9a', maxTicksLimit: 6, font: { size: 10 } },
-          grid: { color: '#1e2630' },
-        },
-        y: {
-          ticks: {
-            color: '#7c8b9a', font: { size: 10 },
-            callback: (v) => v + '%',
-          },
-          grid: { color: '#1e2630' },
-        },
-      },
-    },
+  // 1. Chuẩn hoá dữ liệu ngày: giá trị danh mục (VNĐ) và % lợi nhuận tích luỹ
+  const daily = hist.map(r => ({
+    date: r.date,
+    value: r.E1 ?? 0,
+    pct: (r.CR ?? 0) * 100,
+    vniPct: (r['CR(VNI)'] ?? 0) * 100,
+  }));
+
+  // 2. Dựng nến kiểu "close-to-close": open = giá đóng phiên trước đó
+  //    (data.json chỉ lưu giá trị cuối ngày, không có OHLC thật trong ngày)
+  function toOHLC(key) {
+    let prev = null;
+    return daily.map(d => {
+      const close = d[key];
+      const open = prev === null ? close : prev;
+      prev = close;
+      return { time: d.date, open, high: Math.max(open, close), low: Math.min(open, close), close };
+    });
+  }
+  const dailyOHLC = { value: toOHLC('value'), pct: toOHLC('pct') };
+  const dailyVniOHLC = toOHLC('vniPct');
+
+  function periodKey(dateStr, tf) {
+    if (tf === 'D') return dateStr;
+    const d = new Date(dateStr + 'T00:00:00');
+    if (tf === 'M') return dateStr.slice(0, 7) + '-01';
+    const dow = (d.getDay() + 6) % 7; // 0 = thứ 2
+    const monday = new Date(d);
+    monday.setDate(d.getDate() - dow);
+    return monday.toISOString().slice(0, 10);
+  }
+
+  function aggregate(ohlc, tf) {
+    if (tf === 'D') return ohlc;
+    const groups = new Map();
+    for (const c of ohlc) {
+      const key = periodKey(c.time, tf);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(c);
+    }
+    const out = [];
+    for (const [key, arr] of groups) {
+      out.push({
+        time: key,
+        open: arr[0].open,
+        close: arr[arr.length - 1].close,
+        high: Math.max(...arr.map(x => x.high)),
+        low: Math.min(...arr.map(x => x.low)),
+      });
+    }
+    out.sort((a, b) => a.time.localeCompare(b.time));
+    return out;
+  }
+
+  const container = document.getElementById('chartContainer');
+  const tooltip = document.getElementById('chartTooltip');
+  const vniLegendItem = document.getElementById('vniLegendItem');
+
+  const chart = LightweightCharts.createChart(container, {
+    autoSize: true,
+    layout: { background: { color: 'transparent' }, textColor: '#7c8b9a', fontFamily: "'JetBrains Mono', monospace", fontSize: 10 },
+    grid: { vertLines: { color: '#1e2630' }, horzLines: { color: '#1e2630' } },
+    rightPriceScale: { borderColor: '#1e2630' },
+    timeScale: { borderColor: '#1e2630', timeVisible: false, rightOffset: 3 },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    handleScroll: true,
+    handleScale: true,
   });
+
+  const candleSeries = chart.addCandlestickSeries({
+    upColor: '#3ddc97', downColor: '#f8615a', borderVisible: false,
+    wickUpColor: '#3ddc97', wickDownColor: '#f8615a',
+  });
+  const lineSeries = chart.addLineSeries({ color: '#3ddc97', lineWidth: 2 });
+  const vniSeries = chart.addLineSeries({ color: '#7a8ea3', lineWidth: 1.5 });
+
+  const state = { metric: 'value', type: 'candle', tf: 'D', range: 'ALL' };
+
+  function currentData() {
+    const src = state.metric === 'value' ? dailyOHLC.value : dailyOHLC.pct;
+    return aggregate(src, state.tf);
+  }
+  function currentVniData() {
+    return aggregate(dailyVniOHLC, state.tf);
+  }
+
+  function applyRange() {
+    const times = lastRenderedTimes;
+    if (!times || !times.length) return;
+    if (state.range === 'ALL') { chart.timeScale().fitContent(); return; }
+    const days = { '1M': 30, '3M': 90, '6M': 182, '1Y': 365 }[state.range];
+    const to = times[times.length - 1];
+    const fromDate = new Date(to + 'T00:00:00');
+    fromDate.setDate(fromDate.getDate() - days);
+    const from = fromDate.toISOString().slice(0, 10);
+    try {
+      chart.timeScale().setVisibleRange({ from, to });
+    } catch (e) { chart.timeScale().fitContent(); }
+  }
+
+  let lastRenderedTimes = [];
+
+  function rebuild() {
+    const ohlc = currentData();
+    lastRenderedTimes = ohlc.map(c => c.time);
+    const showCandle = state.type === 'candle';
+    const showVni = !showCandle && state.metric === 'pct';
+
+    candleSeries.applyOptions({ visible: showCandle });
+    lineSeries.applyOptions({ visible: !showCandle });
+    vniSeries.applyOptions({ visible: showVni });
+    vniLegendItem.style.display = showVni ? 'flex' : 'none';
+
+    if (showCandle) {
+      candleSeries.setData(ohlc);
+    } else {
+      lineSeries.setData(ohlc.map(c => ({ time: c.time, value: c.close })));
+      if (showVni) {
+        vniSeries.setData(currentVniData().map(c => ({ time: c.time, value: c.close })));
+      }
+    }
+
+    candleSeries.applyOptions({
+      priceFormat: state.metric === 'value'
+        ? { type: 'custom', formatter: v => new Intl.NumberFormat('vi-VN').format(Math.round(v)) }
+        : { type: 'custom', formatter: v => v.toFixed(2) + '%' },
+    });
+    lineSeries.applyOptions({ priceFormat: candleSeries.options().priceFormat });
+
+    applyRange();
+  }
+
+  // ── Điều khiển segment (Giá trị/%, Nến/Đường, Ngày/Tuần/Tháng, khoảng thời gian) ──
+  function wireSeg(id, stateKey) {
+    const seg = document.getElementById(id);
+    seg.addEventListener('click', e => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      seg.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state[stateKey] = btn.dataset.v;
+      rebuild();
+    });
+  }
+  wireSeg('metricSeg', 'metric');
+  wireSeg('typeSeg', 'type');
+  wireSeg('tfSeg', 'tf');
+  wireSeg('rangeSeg', 'range');
+
+  // ── Crosshair: hiện giá trị tại thời điểm đang trỏ ──
+  chart.subscribeCrosshairMove(param => {
+    if (!param || !param.time || !param.point) {
+      tooltip.style.display = 'none';
+      return;
+    }
+    const activeSeries = state.type === 'candle' ? candleSeries : lineSeries;
+    const d = param.seriesData.get(activeSeries);
+    if (!d) { tooltip.style.display = 'none'; return; }
+
+    const isPct = state.metric === 'pct';
+    const fmt = v => isPct ? (v >= 0 ? '+' : '') + v.toFixed(2) + '%' : fmtVND(v);
+
+    let rows = '';
+    if (state.type === 'candle') {
+      const dir = d.close >= d.open ? 'tt-up' : 'tt-down';
+      rows = `
+        <div class="tt-row"><span class="tt-lbl">Mở</span><span>${fmt(d.open)}</span></div>
+        <div class="tt-row"><span class="tt-lbl">Cao</span><span>${fmt(d.high)}</span></div>
+        <div class="tt-row"><span class="tt-lbl">Thấp</span><span>${fmt(d.low)}</span></div>
+        <div class="tt-row"><span class="tt-lbl">Đóng</span><span class="${dir}">${fmt(d.close)}</span></div>`;
+    } else {
+      rows = `<div class="tt-row"><span class="tt-lbl">Danh mục</span><span>${fmt(d.value)}</span></div>`;
+      const vd = param.seriesData.get(vniSeries);
+      if (vd && vniSeries.options().visible) {
+        rows += `<div class="tt-row"><span class="tt-lbl">VNINDEX</span><span>${(vd.value >= 0 ? '+' : '') + vd.value.toFixed(2)}%</span></div>`;
+      }
+    }
+    tooltip.innerHTML = `<div class="tt-date">${param.time}</div>${rows}`;
+    tooltip.style.display = 'block';
+
+    const cw = container.clientWidth;
+    const tw = 160;
+    let left = param.point.x + 14;
+    if (left + tw > cw) left = param.point.x - tw - 14;
+    tooltip.style.left = Math.max(4, left) + 'px';
+    tooltip.style.top = '6px';
+  });
+
+  rebuild();
 }
 
 loadData();
