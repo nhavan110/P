@@ -16,7 +16,7 @@ from vnstock import Vnstock
 BASE_DIR     = Path(__file__).resolve().parent
 EXCEL_FILE   = BASE_DIR / "data" / "Portfolio.xlsx"
 OUTPUT_FILE  = BASE_DIR / "data" / "MyPortfolio.xlsx"
-JSON_FILE    = BASE_DIR / "data.json"   # ở gốc repo, khớp với fetch('data.json') trong index.html
+JSON_FILE    = BASE_DIR / "data" / "data.json"   # trong thư mục data/, khớp với fetch('data/data.json') trong index.html và được workflow "git add data/" commit
 MANUAL_FILE  = BASE_DIR / "manual_entries.csv"
 SHEET_NAME   = "Sheet1"
 VNI_START    = "2022-06-01"
