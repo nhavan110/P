@@ -1,0 +1,36 @@
+name: Update Portfolio
+
+on:
+  schedule:
+    # Chạy mỗi 30 phút, khung 02:00–08:00 UTC (~09:00–15:00 giờ VN), T2-T6
+    - cron: '*/30 2-8 * * 1-5'
+  workflow_dispatch: {}   # cho phép bấm "Run workflow" chạy tay để test
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run update script
+        run: python update_portfolio.py
+
+      - name: Commit and push updated data
+        run: |
+          git config user.name "portfolio-bot"
+          git config user.email "actions@github.com"
+          git add data/ manual_entries.csv
+          git diff --cached --quiet || git commit -m "Auto update portfolio $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git push
