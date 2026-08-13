@@ -2,8 +2,8 @@ name: Update Portfolio
 
 on:
   schedule:
-    # Chạy mỗi 30 phút, khung 02:00–08:00 UTC (~09:00–15:00 giờ VN), T2-T6
-    - cron: '*/30 2-8 * * 1-5'
+    # Chạy 1 lần/ngày lúc 11:00 UTC = 18:00 giờ Việt Nam (UTC+7, không có giờ mùa hè)
+    - cron: '0 11 * * *'
   workflow_dispatch: {}   # cho phép bấm "Run workflow" chạy tay để test
 
 permissions:
