@@ -3,6 +3,9 @@ import json
 from copy import copy
 from datetime import datetime, date
 from pathlib import Path
+from zoneinfo import ZoneInfo
+
+VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 import numpy as np
 import pandas as pd
@@ -445,7 +448,7 @@ def export_json(df: pd.DataFrame, path: Path) -> None:
 
     latest = records.iloc[-1]
     summary = {
-        "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "last_updated": datetime.now(VN_TZ).strftime("%Y-%m-%d %H:%M:%S"),
         "portfolio_value": safe_num(latest.get("E1")),
         "cumulative_return": safe_num(latest.get("CR")),
         "cumulative_return_vni": safe_num(latest.get("CR(VNI)")),
