@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portfolio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#0a0e12;
+    --panel:#11161c;
+    --panel-border:#1e2630;
+    --text:#e7ecf1;
+    --muted:#7c8b9a;
+    --mint:#3ddc97;
+    --coral:#f8615a;
+    --amber:#f0b64c;
+    --line-vni:#4a5a6a;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:'JetBrains Mono', monospace;
+    min-height:100vh;
+    padding:20px 16px 60px;
+  }
+  .wrap{max-width:760px; margin:0 auto;}
+
+  header{margin-bottom:28px;}
+  .eyebrow{
+    font-size:11px; letter-spacing:0.16em; text-transform:uppercase;
+    color:var(--muted); margin-bottom:6px;
+  }
+  h1{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:22px; font-weight:700; letter-spacing:-0.01em;
+  }
+  .updated{font-size:11px; color:var(--muted); margin-top:4px;}
+
+  .hero{
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    border-radius:14px;
+    padding:24px 20px;
+    margin-bottom:16px;
+  }
+  .hero-value{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:38px; font-weight:700; letter-spacing:-0.01em;
+    line-height:1.1;
+  }
+  .hero-sub{
+    display:flex; gap:18px; margin-top:14px; flex-wrap:wrap;
+  }
+  .pill{
+    font-size:13px; font-weight:500;
+    display:flex; align-items:center; gap:6px;
+  }
+  .pill .lbl{color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:0.08em;}
+  .pos{color:var(--mint);}
+  .neg{color:var(--coral);}
+
+  .grid{
+    display:grid; grid-template-columns:repeat(2, 1fr); gap:10px;
+    margin-bottom:16px;
+  }
+  .stat{
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    border-radius:12px;
+    padding:14px 16px;
+  }
+  .stat .lbl{font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:6px;}
+  .stat .val{font-size:19px; font-weight:700; font-family:'Space Grotesk', sans-serif;}
+
+  .chart-panel{
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    border-radius:14px;
+    padding:18px 14px 10px;
+    margin-bottom:16px;
+  }
+  .chart-title{
+    font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.1em;
+    margin-bottom:12px; padding:0 4px;
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  .legend{display:flex; gap:14px; font-size:11px;}
+  .legend span{display:flex; align-items:center; gap:5px;}
+  .dot{width:8px; height:8px; border-radius:50%; display:inline-block;}
+
+  canvas{max-height:260px;}
+
+  .empty{
+    text-align:center; padding:60px 20px; color:var(--muted); font-size:13px; line-height:1.6;
+  }
+  .empty code{
+    background:var(--panel); padding:2px 6px; border-radius:4px; color:var(--amber);
+  }
+
+  footer{
+    text-align:center; margin-top:24px; font-size:10px; color:var(--muted);
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="eyebrow">Danh mục cá nhân</div>
+      <h1>Portfolio Tracker</h1>
+      <div class="updated" id="updated">Đang tải…</div>
+    </header>
+
+    <div id="content"></div>
+
+    <footer>Tự động cập nhật qua GitHub Actions · dữ liệu từ data/data.json</footer>
+  </div>
+
+<script>
+async function loadData() {
+  try {
+    const res = await fetch('data/data.json?_=' + Date.now());
+    if (!res.ok) throw new Error('not found');
+    const json = await res.json();
+    render(json);
+  } catch (e) {
+    document.getElementById('content').innerHTML = `
+      <div class="empty">
+        Chưa có dữ liệu.<br><br>
+        Chạy workflow lần đầu (tab <b>Actions</b> → <b>Update Portfolio</b> → <b>Run workflow</b>)
+        để tạo file <code>data/data.json</code>.
+      </div>`;
+    document.getElementById('updated').textContent = '';
+  }
+}
+
+function fmtVND(n) {
+  return new Intl.NumberFormat('vi-VN').format(Math.round(n)) + ' đ';
+}
+function fmtPct(n) {
+  const v = (n * 100).toFixed(2) + '%';
+  return (n >= 0 ? '+' : '') + v;
+}
+
+function render(json) {
+  const s = json.summary || {};
+  const hist = json.history || [];
+
+  document.getElementById('updated').textContent =
+    'Cập nhật lúc ' + (s.last_updated || '—');
+
+  const crClass = (s.cumulative_return ?? 0) >= 0 ? 'pos' : 'neg';
+
+  document.getElementById('content').innerHTML = `
+    <div class="hero">
+      <div class="hero-value">${fmtVND(s.portfolio_value ?? 0)}</div>
+      <div class="hero-sub">
+        <div class="pill ${crClass}">
+          <span class="lbl">Lợi nhuận tích luỹ</span> ${fmtPct(s.cumulative_return ?? 0)}
+        </div>
+        <div class="pill">
+          <span class="lbl">VNINDEX</span> ${fmtPct(s.cumulative_return_vni ?? 0)}
+        </div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="stat">
+        <div class="lbl">Sharpe ratio</div>
+        <div class="val">${s.sharpe_ratio != null ? s.sharpe_ratio.toFixed(2) : '—'}</div>
+      </div>
+      <div class="stat">
+        <div class="lbl">Max drawdown</div>
+        <div class="val neg">${s.max_drawdown != null ? fmtPct(s.max_drawdown) : '—'}</div>
+      </div>
+    </div>
+
+    <div class="chart-panel">
+      <div class="chart-title">
+        <span>Lợi nhuận tích luỹ theo thời gian</span>
+        <span class="legend">
+          <span><span class="dot" style="background:var(--mint)"></span>Danh mục</span>
+          <span><span class="dot" style="background:var(--line-vni)"></span>VNINDEX</span>
+        </span>
+      </div>
+      <canvas id="crChart"></canvas>
+    </div>
+  `;
+
+  drawChart(hist);
+}
+
+function drawChart(hist) {
+  const ctx = document.getElementById('crChart');
+  const labels = hist.map(r => r.date);
+  const cr = hist.map(r => (r.CR ?? 0) * 100);
+  const crVni = hist.map(r => (r['CR(VNI)'] ?? 0) * 100);
+
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Danh mục',
+          data: cr,
+          borderColor: '#3ddc97',
+          backgroundColor: 'rgba(61,220,151,0.08)',
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: true,
+          tension: 0.15,
+        },
+        {
+          label: 'VNINDEX',
+          data: crVni,
+          borderColor: '#4a5a6a',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          fill: false,
+          tension: 0.15,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: {
+          ticks: { color: '#7c8b9a', maxTicksLimit: 6, font: { size: 10 } },
+          grid: { color: '#1e2630' },
+        },
+        y: {
+          ticks: {
+            color: '#7c8b9a', font: { size: 10 },
+            callback: (v) => v + '%',
+          },
+          grid: { color: '#1e2630' },
+        },
+      },
+    },
+  });
+}
+
+loadData();
+</script>
+</body>
+</html>
