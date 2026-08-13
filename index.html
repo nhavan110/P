@@ -8,6 +8,11 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script>
+  if (typeof Chart === 'undefined') {
+    document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"><\/script>');
+  }
+</script>
 <style>
   :root{
     --bg:#0a0e12;
@@ -191,7 +196,15 @@ function render(json) {
     </div>
   `;
 
-  drawChart(hist);
+  try {
+    drawChart(hist);
+  } catch (e) {
+    console.error('Không vẽ được biểu đồ:', e);
+    const panel = document.querySelector('.chart-panel');
+    if (panel) {
+      panel.innerHTML = '<div style="padding:20px 4px;color:var(--muted);font-size:12px;">Không tải được thư viện biểu đồ (Chart.js). Các số liệu khác vẫn hiển thị bình thường ở trên.</div>';
+    }
+  }
 }
 
 function drawChart(hist) {
