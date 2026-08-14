@@ -433,7 +433,8 @@ def export_json(df: pd.DataFrame, path: Path) -> None:
     records["date"] = records["date"].dt.strftime("%Y-%m-%d")
 
     keep_cols = [c for c in [
-        "date", "E1", "DR", "DR(VNI)", "CR", "CR(VNI)",
+        "date", "HPG", "TCB", "FPT", "PNJ", "FRT", "MWG", "MBB", "VNINDEX",
+        "E1", "W", "E0", "D", "DR", "DR(VNI)", "CR", "CR(VNI)",
         "MR", "YR", "YR(VNI)", "Sharpe", "MaxDrawdown",
     ] if c in records.columns]
 

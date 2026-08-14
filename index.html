@@ -139,6 +139,54 @@
     background:var(--panel); padding:2px 6px; border-radius:4px; color:var(--amber);
   }
 
+  /* ── Bảng dữ liệu ── */
+  .table-panel{
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    border-radius:14px;
+    padding:18px 14px 16px;
+    margin-bottom:16px;
+  }
+  .table-title{
+    font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.1em;
+    margin-bottom:12px; padding:0 4px;
+    display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;
+  }
+  .table-hint{font-size:10px; color:var(--muted); text-transform:none; letter-spacing:0;}
+  .table-scroll{
+    overflow:auto; max-height:560px; border:1px solid var(--panel-border); border-radius:10px;
+  }
+  table.dtable{
+    border-collapse:collapse; font-size:11px; white-space:nowrap; min-width:100%;
+  }
+  table.dtable th, table.dtable td{
+    padding:6px 9px; text-align:right; border-bottom:1px solid var(--panel-border);
+    border-right:1px solid var(--panel-border);
+  }
+  table.dtable th{
+    position:sticky; top:0; z-index:2;
+    background:#161d25; color:var(--text); font-weight:700; text-align:right;
+    font-family:'Space Grotesk', sans-serif; font-size:10.5px;
+  }
+  table.dtable td.dt-date, table.dtable th.dt-date{
+    text-align:left; position:sticky; left:0; z-index:1;
+    background:#0d1218;
+  }
+  table.dtable th.dt-date{ z-index:3; }
+  table.dtable td.dt-date{ color:var(--text); font-weight:500; }
+  table.dtable tbody tr:hover td{ background:#161d25; }
+  table.dtable tbody tr:hover td.dt-date{ background:#1a222c; }
+  table.dtable td.g-price{ background:rgba(61,220,151,0.06); }
+  table.dtable td.g-cyan{ background:rgba(122,208,230,0.06); }
+  table.dtable td.g-vni{ background:rgba(240,182,76,0.07); }
+  table.dtable td.g-cash{ background:rgba(90,140,230,0.08); }
+  table.dtable td.g-stat{ background:rgba(158,122,222,0.09); font-weight:500; }
+  table.dtable th.g-price{ color:var(--mint); }
+  table.dtable th.g-cyan{ color:#7ad0e6; }
+  table.dtable th.g-vni{ color:var(--amber); }
+  table.dtable th.g-cash{ color:#9db8f0; }
+  table.dtable th.g-stat{ color:#c3aef2; }
+
   footer{
     text-align:center; margin-top:24px; font-size:10px; color:var(--muted);
   }
@@ -251,7 +299,17 @@ function render(json) {
         <div class="chart-tooltip" id="chartTooltip"></div>
       </div>
     </div>
+
+    <div class="table-panel">
+      <div class="table-title">
+        <span>Bảng dữ liệu chi tiết (${hist.length} phiên)</span>
+        <span class="table-hint">Cuộn để xem thêm · ô giống nhau theo tháng/năm được gộp</span>
+      </div>
+      <div class="table-scroll" id="dataTableWrap"></div>
+    </div>
   `;
+
+  buildTable(hist);
 
   try {
     initChart(hist);
@@ -262,6 +320,92 @@ function render(json) {
       panel.innerHTML = '<div style="padding:20px 4px;color:var(--muted);font-size:12px;">Không tải được thư viện biểu đồ. Các số liệu khác vẫn hiển thị bình thường ở trên.</div>';
     }
   }
+}
+
+// ── BẢNG DỮ LIỆU (gộp ô các cột lặp giá trị theo tháng/năm) ─────────────────
+const TABLE_COLS = [
+  { key: 'date',         label: 'date',          cls: '',        fmt: v => fmtDate(v) },
+  { key: 'HPG',          label: 'HPG',           cls: 'g-price',  fmt: v => fmtNum(v, 0) },
+  { key: 'TCB',          label: 'TCB',           cls: 'g-price',  fmt: v => fmtNum(v, 0) },
+  { key: 'FPT',          label: 'FPT',           cls: 'g-price',  fmt: v => fmtNum(v, 0) },
+  { key: 'PNJ',          label: 'PNJ',           cls: 'g-price',  fmt: v => fmtNum(v, 0) },
+  { key: 'FRT',          label: 'FRT',           cls: 'g-cyan',   fmt: v => fmtNum(v, 0) },
+  { key: 'MWG',          label: 'MWG',           cls: 'g-cyan',   fmt: v => fmtNum(v, 0) },
+  { key: 'MBB',          label: 'MBB',           cls: 'g-cyan',   fmt: v => fmtNum(v, 0) },
+  { key: 'VNINDEX',      label: 'VNINDEX',       cls: 'g-vni',    fmt: v => fmtNum(v, 2) },
+  { key: 'E1',           label: 'E1',            cls: 'g-cash',   fmt: v => fmtNum(v, 0) },
+  { key: 'W',            label: 'W',             cls: 'g-cash',   fmt: v => fmtNum(v, 0) },
+  { key: 'E0',           label: 'E0',            cls: 'g-cash',   fmt: v => fmtNum(v, 0) },
+  { key: 'D',            label: 'D',             cls: 'g-cash',   fmt: v => fmtNum(v, 0) },
+  { key: 'DR',           label: 'DR',            cls: 'g-stat',   fmt: v => fmtPct(v) },
+  { key: 'DR(VNI)',      label: 'DR(VNI)',       cls: 'g-stat',   fmt: v => fmtPct(v) },
+  { key: 'CR',           label: 'CR',            cls: 'g-stat',   fmt: v => fmtPct(v) },
+  { key: 'MR',           label: 'MR',            cls: 'g-stat',   fmt: v => fmtPct(v),  merge: true },
+  { key: 'YR',           label: 'YR',            cls: 'g-stat',   fmt: v => fmtPct(v),  merge: true },
+  { key: 'YR(VNI)',      label: 'YR(VNI)',       cls: 'g-stat',   fmt: v => fmtPct(v),  merge: true },
+  { key: 'Sharpe',       label: 'Sharpe ratio',  cls: 'g-stat',   fmt: v => fmtNum(v, 2), merge: true },
+  { key: 'MaxDrawdown',  label: 'Max drawdown',  cls: 'g-stat',   fmt: v => fmtPct(v),  merge: true },
+];
+
+function fmtNum(n, decimals) {
+  if (n === null || n === undefined || Number.isNaN(n)) return '—';
+  return new Intl.NumberFormat('vi-VN', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(n);
+}
+function fmtDate(s) {
+  if (!s) return '—';
+  const [y, m, d] = s.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+// Với mỗi cột "merge", tính rowSpan cho ô đầu mỗi đoạn giá trị liên tiếp giống nhau.
+// Cell thuộc đoạn (không phải ô đầu) sẽ có rowSpan = 0, nghĩa là bỏ qua khi render.
+function computeRowSpans(rows, key) {
+  const n = rows.length;
+  const spans = new Array(n).fill(1);
+  let i = 0;
+  while (i < n) {
+    let j = i;
+    const v = rows[i][key];
+    while (j + 1 < n && rows[j + 1][key] === v) j++;
+    spans[i] = j - i + 1;
+    for (let k = i + 1; k <= j; k++) spans[k] = 0;
+    i = j + 1;
+  }
+  return spans;
+}
+
+function buildTable(hist) {
+  const wrap = document.getElementById('dataTableWrap');
+  if (!wrap) return;
+  if (!hist.length) { wrap.innerHTML = ''; return; }
+
+  // Mới nhất lên trên
+  const rows = [...hist].reverse();
+
+  const rowSpanMap = {};
+  TABLE_COLS.forEach(col => {
+    if (col.merge) rowSpanMap[col.key] = computeRowSpans(rows, col.key);
+  });
+
+  const thead = `<thead><tr>${TABLE_COLS.map(c =>
+    `<th class="${c.key === 'date' ? 'dt-date' : c.cls}">${c.label}</th>`
+  ).join('')}</tr></thead>`;
+
+  const bodyRows = rows.map((r, i) => {
+    const cells = TABLE_COLS.map(c => {
+      if (c.merge) {
+        const span = rowSpanMap[c.key][i];
+        if (span === 0) return '';
+        const rs = span > 1 ? ` rowspan="${span}"` : '';
+        return `<td class="${c.cls}"${rs}>${c.fmt(r[c.key])}</td>`;
+      }
+      const cls = c.key === 'date' ? 'dt-date' : c.cls;
+      return `<td class="${cls}">${c.fmt(r[c.key])}</td>`;
+    }).join('');
+    return `<tr>${cells}</tr>`;
+  }).join('');
+
+  wrap.innerHTML = `<table class="dtable">${thead}<tbody>${bodyRows}</tbody></table>`;
 }
 
 // ── CHART (TradingView Lightweight Charts) ─────────────────────────────────
