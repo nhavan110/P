@@ -15,8 +15,6 @@ from openpyxl.styles import Alignment, Border, NamedStyle, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from vnstock import Vnstock
 
-from dashboard_analytics import compute_dashboard_extras
-
 # ── CẤU HÌNH ─────────────────────────────────────────────────────────────────
 BASE_DIR     = Path(__file__).resolve().parent
 PRICE_HISTORY_FILE     = BASE_DIR / "data" / "price_history.csv"      # giá thô (input/cache), KHÔNG chứa W/D hay kết quả
@@ -500,14 +498,10 @@ def safe_num(x):
     return v
 
 
-def export_json(df: pd.DataFrame, path: Path, transactions: pd.DataFrame) -> None:
+def export_json(df: pd.DataFrame, path: Path) -> None:
     records = df.copy()
     records["date"] = pd.to_datetime(records["date"], format="%d/%m/%Y")
     records = records.sort_values("date")
-
-    # ── Số liệu mở rộng cho 01/03/04/05/06/07 (positions, P&L, risk, drawdown, XIRR) ──
-    extras = compute_dashboard_extras(records, transactions)
-
     records["date"] = records["date"].dt.strftime("%Y-%m-%d")
 
     keep_cols = [c for c in [
@@ -532,27 +526,14 @@ def export_json(df: pd.DataFrame, path: Path, transactions: pd.DataFrame) -> Non
         "cumulative_return": safe_num(latest.get("CR")),
         "cumulative_return_vni": safe_num(latest.get("CR(VNI)")),
         "sharpe_ratio": safe_num(latest.get("Sharpe")),
-        "max_drawdown": extras["max_drawdown_all"],
-    }
-
-    out = {
-        "summary": summary,
-        "history": history,
-        "positions": extras["positions"],
-        "sector_allocation": extras["sector_allocation"],
-        "position_contribution": extras["position_contribution"],
-        "transactions_markers": extras["transactions_markers"],
-        "drawdown_series": extras["drawdown_series"],
-        "current_drawdown": extras["current_drawdown"],
-        "xirr_all": extras["xirr_all"],
-        "periods": extras["periods"],
-        "available_years": extras["available_years"],
+        "max_drawdown": safe_num(latest.get("MaxDrawdown")),
     }
 
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(out, f, ensure_ascii=False, indent=2, allow_nan=False)
+        json.dump({"summary": summary, "history": history}, f,
+                   ensure_ascii=False, indent=2, allow_nan=False)
     print(f"✅ Đã xuất: {path}")
 
 
-export_json(df_pr, JSON_FILE, transactions)
+export_json(df_pr, JSON_FILE)
