@@ -1,0 +1,7 @@
+requests
+numpy
+pandas
+openpyxl
+vnstock
+google-api-python-client
+google-auth
