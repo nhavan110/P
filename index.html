@@ -24,6 +24,7 @@
     --coral:#f8615a;
     --amber:#f0b64c;
     --line-vni:#7a8ea3;
+    --violet:#9e7ade;
   }
   *{box-sizing:border-box; margin:0; padding:0;}
   body{
@@ -73,6 +74,7 @@
     display:grid; grid-template-columns:repeat(2, 1fr); gap:10px;
     margin-bottom:16px;
   }
+  .grid.cols-3{ grid-template-columns:repeat(3, 1fr); }
   .stat{
     background:var(--panel);
     border:1px solid var(--panel-border);
@@ -81,6 +83,7 @@
   }
   .stat .lbl{font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:6px;}
   .stat .val{font-size:19px; font-weight:700; font-family:'Space Grotesk', sans-serif;}
+  .stat .sub{font-size:10.5px; color:var(--muted); margin-top:4px;}
 
   .chart-panel{
     background:var(--panel);
@@ -119,18 +122,25 @@
 
   .chart-wrap{position:relative;}
   #chartContainer{width:100%; height:280px;}
+  #ddChartContainer{width:100%; height:220px;}
 
   .chart-tooltip{
     position:absolute; top:6px; left:6px; pointer-events:none;
     background:rgba(10,14,18,0.92); border:1px solid var(--panel-border);
     border-radius:8px; padding:8px 10px; font-size:11px; line-height:1.6;
     color:var(--text); display:none; z-index:5; white-space:nowrap;
+    max-width:240px;
   }
   .chart-tooltip .tt-date{color:var(--muted); margin-bottom:3px; font-size:10px; text-transform:uppercase; letter-spacing:0.05em;}
   .chart-tooltip .tt-row{display:flex; gap:8px; justify-content:space-between;}
   .chart-tooltip .tt-row .tt-lbl{color:var(--muted);}
   .chart-tooltip .tt-up{color:var(--mint);}
   .chart-tooltip .tt-down{color:var(--coral);}
+  .chart-tooltip .tt-sep{border-top:1px solid var(--panel-border); margin:5px 0 4px;}
+  .chart-tooltip .tt-tx{margin-bottom:3px;}
+  .chart-tooltip .tt-tx-head{font-weight:700; letter-spacing:0.03em; margin-bottom:1px;}
+  .chart-tooltip .tt-tx-head.buy{color:var(--mint);}
+  .chart-tooltip .tt-tx-head.sell{color:var(--coral);}
 
   .empty{
     text-align:center; padding:60px 20px; color:var(--muted); font-size:13px; line-height:1.6;
@@ -187,20 +197,61 @@
   table.dtable th.g-cash{ color:#9db8f0; }
   table.dtable th.g-stat{ color:#c3aef2; }
 
+  /* ── Bộ chọn kỳ (Tổng lịch sử / từng năm) ── */
+  .period-select{
+    background:var(--bg); border:1px solid var(--panel-border); color:var(--text);
+    font-family:'JetBrains Mono', monospace; font-size:12px; font-weight:500;
+    padding:7px 10px; border-radius:8px; cursor:pointer;
+  }
+  .period-row{ display:flex; justify-content:flex-end; margin-bottom:14px; }
+
+  /* ── Allocation (thanh ngang) ── */
+  .alloc-panel{
+    background:var(--panel); border:1px solid var(--panel-border);
+    border-radius:14px; padding:18px 16px 16px; margin-bottom:16px;
+  }
+  .alloc-title{
+    font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.1em;
+    margin-bottom:14px;
+  }
+  .alloc-row{ display:flex; align-items:center; gap:10px; margin-bottom:11px; }
+  .alloc-row:last-child{ margin-bottom:0; }
+  .alloc-name{ width:58px; flex:0 0 auto; font-size:12px; font-weight:700; font-family:'Space Grotesk', sans-serif; }
+  .alloc-bar-wrap{ flex:1; height:9px; background:var(--bg); border-radius:5px; overflow:hidden; }
+  .alloc-bar{ height:100%; border-radius:5px; background:linear-gradient(90deg, var(--mint), #2ab884); }
+  .alloc-pct{ width:52px; flex:0 0 auto; text-align:right; font-size:12px; font-weight:700; font-family:'Space Grotesk', sans-serif; }
+
+  /* ── Position contribution ── */
+  .contrib-panel{
+    background:var(--panel); border:1px solid var(--panel-border);
+    border-radius:14px; padding:18px 14px 16px; margin-bottom:16px;
+  }
+  table.ctable{ border-collapse:collapse; width:100%; font-size:12px; }
+  table.ctable th{
+    text-align:right; padding:8px 8px; color:var(--muted); font-weight:700;
+    font-family:'Space Grotesk', sans-serif; font-size:10.5px; text-transform:uppercase;
+    letter-spacing:0.05em; border-bottom:1px solid var(--panel-border);
+  }
+  table.ctable th:first-child, table.ctable td:first-child{ text-align:left; }
+  table.ctable td{ text-align:right; padding:9px 8px; border-bottom:1px solid var(--panel-border); }
+  table.ctable td:first-child{ font-weight:700; font-family:'Space Grotesk', sans-serif; }
+  table.ctable tr:last-child td{ border-bottom:none; }
+  table.ctable tr:hover td{ background:#161d25; }
+
   footer{
     text-align:center; margin-top:24px; font-size:10px; color:var(--muted);
   }
 
   /* ── Điều hướng trang ── */
   nav.tabs{
-    display:flex; gap:6px; background:var(--panel); border:1px solid var(--panel-border);
-    border-radius:12px; padding:5px; margin-bottom:16px;
+    display:flex; gap:5px; background:var(--panel); border:1px solid var(--panel-border);
+    border-radius:12px; padding:5px; margin-bottom:16px; overflow-x:auto;
   }
   nav.tabs button{
-    flex:1; background:transparent; border:none; border-radius:8px;
+    flex:1 0 auto; background:transparent; border:none; border-radius:8px;
     color:var(--muted); font-family:'JetBrains Mono', monospace;
-    font-size:12px; font-weight:500; padding:9px 10px; cursor:pointer;
-    transition:background .15s, color .15s;
+    font-size:11.5px; font-weight:500; padding:9px 9px; cursor:pointer;
+    transition:background .15s, color .15s; white-space:nowrap;
   }
   nav.tabs button.active{ background:var(--mint); color:#04231a; font-weight:700; }
   nav.tabs button:hover:not(.active){ color:var(--text); }
@@ -218,27 +269,42 @@
 
     <nav class="tabs" id="pageTabs">
       <button type="button" data-page="overview" class="active">01 · Tổng quan</button>
-      <button type="button" data-page="table">02 · Bảng dữ liệu</button>
+      <button type="button" data-page="pnl">03 · P&amp;L</button>
+      <button type="button" data-page="allocation">04 · Phân bổ</button>
+      <button type="button" data-page="contribution">05 · Đóng góp</button>
+      <button type="button" data-page="drawdown">06 · Drawdown</button>
+      <button type="button" data-page="risk">07 · Rủi ro</button>
+      <button type="button" data-page="table">Bảng dữ liệu</button>
     </nav>
 
     <div id="page-overview" class="page active"></div>
+    <div id="page-pnl" class="page"></div>
+    <div id="page-allocation" class="page"></div>
+    <div id="page-contribution" class="page"></div>
+    <div id="page-drawdown" class="page"></div>
+    <div id="page-risk" class="page"></div>
     <div id="page-table" class="page"></div>
 
     <footer>Tự động cập nhật qua GitHub Actions · dữ liệu từ data/data.json</footer>
   </div>
 
 <script>
+let DATA = null;
+
 async function loadData() {
   try {
     const res = await fetch('data/data.json?_=' + Date.now());
     if (!res.ok) throw new Error('not found');
     const json = await res.json();
+    DATA = json;
     render(json);
   } catch (e) {
     document.getElementById('pageTabs').style.display = 'none';
-    document.getElementById('page-table').style.display = 'none';
-    document.getElementById('page-overview').classList.add('active');
-    document.getElementById('page-overview').innerHTML = `
+    document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
+    const ov = document.getElementById('page-overview');
+    ov.style.display = 'block';
+    ov.classList.add('active');
+    ov.innerHTML = `
       <div class="empty">
         Chưa có dữ liệu.<br><br>
         Chạy workflow lần đầu (tab <b>Actions</b> → <b>Update Portfolio</b> → <b>Run workflow</b>)
@@ -249,11 +315,30 @@ async function loadData() {
 }
 
 function fmtVND(n) {
+  if (n === null || n === undefined) return '—';
   return new Intl.NumberFormat('vi-VN').format(Math.round(n)) + ' đ';
 }
+function fmtVNDSigned(n) {
+  if (n === null || n === undefined) return '—';
+  const s = new Intl.NumberFormat('vi-VN').format(Math.round(Math.abs(n))) + ' đ';
+  return (n >= 0 ? '+' : '−') + s;
+}
 function fmtPct(n) {
+  if (n === null || n === undefined) return '—';
   const v = (n * 100).toFixed(2) + '%';
   return (n >= 0 ? '+' : '') + v;
+}
+function fmtPctPlain(n) {
+  if (n === null || n === undefined) return '—';
+  return (n * 100).toFixed(1) + '%';
+}
+function cls(n) { return (n === null || n === undefined) ? '' : (n >= 0 ? 'pos' : 'neg'); }
+
+function periodOptions(selected) {
+  const years = (DATA.available_years || []).slice().sort((a, b) => b - a);
+  let opts = `<option value="ALL" ${selected === 'ALL' ? 'selected' : ''}>Tổng lịch sử</option>`;
+  years.forEach(y => { opts += `<option value="${y}" ${selected === y ? 'selected' : ''}>${y}</option>`; });
+  return opts;
 }
 
 function render(json) {
@@ -263,29 +348,99 @@ function render(json) {
   document.getElementById('updated').textContent =
     'Cập nhật lúc ' + (s.last_updated || '—');
 
-  const crClass = (s.cumulative_return ?? 0) >= 0 ? 'pos' : 'neg';
+  renderOverview('ALL');
+  renderPnl('ALL');
+  renderAllocation();
+  renderContribution();
+  renderDrawdown();
+  renderRisk('ALL');
+
+  document.getElementById('page-table').innerHTML = `
+    <div class="table-panel">
+      <div class="table-title">
+        <span>Bảng dữ liệu chi tiết (${hist.length} phiên)</span>
+        <span class="table-hint">Cuộn để xem thêm · ô giống nhau theo tháng/năm được gộp</span>
+      </div>
+      <div class="table-scroll" id="dataTableWrap"></div>
+    </div>
+  `;
+
+  buildTable(hist);
+  initPageTabs();
+
+  try {
+    initChart(hist, json.transactions_markers || []);
+  } catch (e) {
+    console.error('Không vẽ được biểu đồ:', e);
+    const panel = document.querySelector('#chartContainer');
+    if (panel) {
+      panel.parentElement.innerHTML = '<div style="padding:20px 4px;color:var(--muted);font-size:12px;">Không tải được thư viện biểu đồ. Các số liệu khác vẫn hiển thị bình thường ở trên.</div>';
+    }
+  }
+
+  try {
+    initDrawdownChart(json.drawdown_series || []);
+  } catch (e) {
+    console.error('Không vẽ được biểu đồ drawdown:', e);
+  }
+}
+
+// ── 01 · TỔNG QUAN (+ 02 chart) ──────────────────────────────────────────────
+function renderOverview(period) {
+  const p = (DATA.periods || {})[period] || {};
+  const crClass = cls(p.return_pct);
 
   document.getElementById('page-overview').innerHTML = `
+    <div class="period-row">
+      <select class="period-select" id="ovPeriod" onchange="renderOverview(this.value)">
+        ${periodOptions(period)}
+      </select>
+    </div>
+
     <div class="hero">
-      <div class="hero-value">${fmtVND(s.portfolio_value ?? 0)}</div>
+      <div class="hero-value">${fmtVND(p.portfolio_value)}</div>
       <div class="hero-sub">
         <div class="pill ${crClass}">
-          <span class="lbl">Lợi nhuận tích luỹ</span> ${fmtPct(s.cumulative_return ?? 0)}
+          <span class="lbl">Return</span> ${fmtPct(p.return_pct)}
         </div>
         <div class="pill">
-          <span class="lbl">VNINDEX</span> ${fmtPct(s.cumulative_return_vni ?? 0)}
+          <span class="lbl">VNINDEX</span> ${fmtPct(p.vni_return_pct)}
         </div>
       </div>
     </div>
 
     <div class="grid">
       <div class="stat">
+        <div class="lbl">Vốn đầu tư</div>
+        <div class="val">${fmtVND(p.invested_capital)}</div>
+      </div>
+      <div class="stat">
+        <div class="lbl">P&amp;L</div>
+        <div class="val ${cls(p.pnl_total)}">${fmtVNDSigned(p.pnl_total)}</div>
+      </div>
+      <div class="stat">
+        <div class="lbl">XIRR</div>
+        <div class="val ${cls(p.xirr)}">${fmtPct(p.xirr)}</div>
+      </div>
+      <div class="stat">
         <div class="lbl">Sharpe ratio</div>
-        <div class="val">${s.sharpe_ratio != null ? s.sharpe_ratio.toFixed(2) : '—'}</div>
+        <div class="val">${p.sharpe != null ? p.sharpe.toFixed(2) : '—'}</div>
+      </div>
+      <div class="stat">
+        <div class="lbl">Alpha</div>
+        <div class="val ${cls(p.alpha)}">${fmtPct(p.alpha)}</div>
+      </div>
+      <div class="stat">
+        <div class="lbl">Beta</div>
+        <div class="val">${p.beta != null ? p.beta.toFixed(2) : '—'}</div>
+      </div>
+      <div class="stat">
+        <div class="lbl">Volatility</div>
+        <div class="val">${fmtPctPlain(p.volatility)}</div>
       </div>
       <div class="stat">
         <div class="lbl">Max drawdown</div>
-        <div class="val neg">${s.max_drawdown != null ? fmtPct(s.max_drawdown) : '—'}</div>
+        <div class="val neg">${fmtPct(p.max_drawdown)}</div>
       </div>
     </div>
 
@@ -295,12 +450,14 @@ function render(json) {
         <span class="legend" id="chartLegend">
           <span><span class="dot" style="background:var(--mint)"></span>Danh mục</span>
           <span id="vniLegendItem"><span class="dot" style="background:var(--line-vni)"></span>VNINDEX</span>
+          <span><span class="dot" style="background:var(--mint)"></span>BUY</span>
+          <span><span class="dot" style="background:var(--coral)"></span>SELL</span>
         </span>
       </div>
       <div class="chart-controls">
         <div class="seg" id="metricSeg">
           <button data-v="value" class="active" type="button">Giá trị (đ)</button>
-          <button data-v="pct" type="button">% Lợi nhuận</button>
+          <button data-v="pct" type="button">% Return</button>
         </div>
         <div class="seg" id="typeSeg">
           <button data-v="candle" class="active" type="button">Nến</button>
@@ -325,29 +482,164 @@ function render(json) {
       </div>
     </div>
   `;
+}
 
-  document.getElementById('page-table').innerHTML = `
-    <div class="table-panel">
-      <div class="table-title">
-        <span>Bảng dữ liệu chi tiết (${hist.length} phiên)</span>
-        <span class="table-hint">Cuộn để xem thêm · ô giống nhau theo tháng/năm được gộp</span>
+// ── 03 · P&L ─────────────────────────────────────────────────────────────────
+function renderPnl(period) {
+  const p = (DATA.periods || {})[period] || {};
+  document.getElementById('page-pnl').innerHTML = `
+    <div class="period-row">
+      <select class="period-select" id="pnlPeriod" onchange="renderPnl(this.value)">
+        ${periodOptions(period)}
+      </select>
+    </div>
+    <div class="grid cols-3">
+      <div class="stat">
+        <div class="lbl">Realized P&amp;L</div>
+        <div class="val ${cls(p.pnl_realized)}">${fmtVNDSigned(p.pnl_realized)}</div>
       </div>
-      <div class="table-scroll" id="dataTableWrap"></div>
+      <div class="stat">
+        <div class="lbl">Unrealized P&amp;L</div>
+        <div class="val ${cls(p.pnl_unrealized)}">${fmtVNDSigned(p.pnl_unrealized)}</div>
+      </div>
+      <div class="stat">
+        <div class="lbl">Total P&amp;L</div>
+        <div class="val ${cls(p.pnl_total)}">${fmtVNDSigned(p.pnl_total)}</div>
+      </div>
+    </div>
+    <div class="stat" style="margin-bottom:16px;">
+      <div class="lbl">Ghi chú</div>
+      <div class="sub" style="margin-top:6px; line-height:1.6;">
+        Realized P&amp;L: lãi/lỗ đã chốt (khớp lệnh SELL theo FIFO với các lô BUY trước đó).<br>
+        Unrealized P&amp;L: chênh lệch giữa giá trị thị trường hiện tại và giá vốn của các mã đang nắm giữ, phát sinh trong kỳ đã chọn.
+      </div>
     </div>
   `;
+}
 
-  buildTable(hist);
-  initPageTabs();
+// ── 04 · ALLOCATION ──────────────────────────────────────────────────────────
+function renderAllocation() {
+  const positions = DATA.positions || [];
+  const sectors = DATA.sector_allocation || [];
 
-  try {
-    initChart(hist);
-  } catch (e) {
-    console.error('Không vẽ được biểu đồ:', e);
-    const panel = document.querySelector('.chart-panel .chart-wrap');
-    if (panel) {
-      panel.innerHTML = '<div style="padding:20px 4px;color:var(--muted);font-size:12px;">Không tải được thư viện biểu đồ. Các số liệu khác vẫn hiển thị bình thường ở trên.</div>';
-    }
-  }
+  const posRows = positions.map(p => `
+    <div class="alloc-row">
+      <div class="alloc-name">${p.symbol}</div>
+      <div class="alloc-bar-wrap"><div class="alloc-bar" style="width:${((p.weight || 0) * 100).toFixed(1)}%"></div></div>
+      <div class="alloc-pct">${fmtPctPlain(p.weight)}</div>
+    </div>
+  `).join('') || `<div class="empty" style="padding:20px;">Chưa có vị thế nào đang nắm giữ.</div>`;
+
+  const sectorRows = sectors.map(s => `
+    <div class="alloc-row">
+      <div class="alloc-name">${s.sector}</div>
+      <div class="alloc-bar-wrap"><div class="alloc-bar" style="background:linear-gradient(90deg, var(--violet), #6e4fae); width:${((s.weight || 0) * 100).toFixed(1)}%"></div></div>
+      <div class="alloc-pct">${fmtPctPlain(s.weight)}</div>
+    </div>
+  `).join('') || '';
+
+  document.getElementById('page-allocation').innerHTML = `
+    <div class="alloc-panel">
+      <div class="alloc-title">Allocation hiện tại</div>
+      ${posRows}
+    </div>
+    <div class="alloc-panel">
+      <div class="alloc-title">Sector Allocation hiện tại</div>
+      ${sectorRows}
+    </div>
+  `;
+}
+
+// ── 05 · POSITION CONTRIBUTION ───────────────────────────────────────────────
+function renderContribution() {
+  const rows = DATA.position_contribution || [];
+  const body = rows.map(r => `
+    <tr>
+      <td>${r.symbol}</td>
+      <td>${fmtPctPlain(r.weight)}</td>
+      <td class="${cls(r.return)}">${fmtPct(r.return)}</td>
+      <td class="${cls(r.contribution)}">${fmtPct(r.contribution)}</td>
+    </tr>
+  `).join('') || `<tr><td colspan="4" style="text-align:center; color:var(--muted);">Chưa có vị thế nào đang nắm giữ.</td></tr>`;
+
+  document.getElementById('page-contribution').innerHTML = `
+    <div class="contrib-panel">
+      <div class="alloc-title">Đóng góp vào lợi nhuận danh mục (vị thế hiện tại)</div>
+      <table class="ctable">
+        <thead><tr><th>Mã</th><th>Weight</th><th>Return</th><th>Contribution</th></tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+      <div class="sub" style="margin-top:12px; line-height:1.6; color:var(--muted); font-size:10.5px;">
+        Contribution ≈ Weight × Return — ước lượng mức đóng góp của từng mã vào lợi nhuận toàn danh mục dựa trên giá vốn bình quân (FIFO) và tỷ trọng hiện tại.
+      </div>
+    </div>
+  `;
+}
+
+// ── 06 · DRAWDOWN ─────────────────────────────────────────────────────────────
+function renderDrawdown() {
+  const cd = DATA.current_drawdown;
+  const md = (DATA.periods && DATA.periods.ALL) ? DATA.periods.ALL.max_drawdown : null;
+  document.getElementById('page-drawdown').innerHTML = `
+    <div class="grid">
+      <div class="stat">
+        <div class="lbl">Current drawdown</div>
+        <div class="val neg">${fmtPct(cd)}</div>
+      </div>
+      <div class="stat">
+        <div class="lbl">Max drawdown</div>
+        <div class="val neg">${fmtPct(md)}</div>
+      </div>
+    </div>
+    <div class="chart-panel">
+      <div class="chart-title"><span>Drawdown (toàn bộ lịch sử)</span></div>
+      <div class="chart-wrap">
+        <div id="ddChartContainer"></div>
+        <div class="chart-tooltip" id="ddChartTooltip"></div>
+      </div>
+    </div>
+    <div class="sub" style="color:var(--muted); font-size:10.5px; padding:0 4px;">
+      Max drawdown luôn tính trên toàn bộ lịch sử danh mục, không giới hạn theo từng năm dương lịch.
+    </div>
+  `;
+}
+
+// ── 07 · RISK / MARKET METRICS ────────────────────────────────────────────────
+function renderRisk(period) {
+  const p = (DATA.periods || {})[period] || {};
+  document.getElementById('page-risk').innerHTML = `
+    <div class="period-row">
+      <select class="period-select" id="riskPeriod" onchange="renderRisk(this.value)">
+        ${periodOptions(period)}
+      </select>
+    </div>
+    <div class="grid">
+      <div class="stat">
+        <div class="lbl">Alpha</div>
+        <div class="val ${cls(p.alpha)}">${fmtPct(p.alpha)}</div>
+      </div>
+      <div class="stat">
+        <div class="lbl">Beta</div>
+        <div class="val">${p.beta != null ? p.beta.toFixed(2) : '—'}</div>
+      </div>
+      <div class="stat">
+        <div class="lbl">Volatility</div>
+        <div class="val">${fmtPctPlain(p.volatility)}</div>
+      </div>
+      <div class="stat">
+        <div class="lbl">Sharpe ratio</div>
+        <div class="val">${p.sharpe != null ? p.sharpe.toFixed(2) : '—'}</div>
+      </div>
+      <div class="stat">
+        <div class="lbl">Max drawdown</div>
+        <div class="val neg">${fmtPct(p.max_drawdown)}</div>
+      </div>
+      <div class="stat">
+        <div class="lbl">Correlation (VNI)</div>
+        <div class="val">${p.correlation != null ? p.correlation.toFixed(2) : '—'}</div>
+      </div>
+    </div>
+  `;
 }
 
 // ── BẢNG DỮ LIỆU (gộp ô các cột lặp giá trị theo tháng/năm) ─────────────────
@@ -437,7 +729,7 @@ function buildTable(hist) {
 }
 
 // ── CHART (TradingView Lightweight Charts) ─────────────────────────────────
-function initChart(hist) {
+function initChart(hist, markers) {
   if (typeof LightweightCharts === 'undefined' || !hist.length) return;
 
   // 1. Chuẩn hoá dữ liệu ngày: giá trị danh mục (VNĐ) và % lợi nhuận tích luỹ
@@ -447,6 +739,13 @@ function initChart(hist) {
     pct: (r.CR ?? 0) * 100,
     vniPct: (r['CR(VNI)'] ?? 0) * 100,
   }));
+
+  // Gộp các giao dịch BUY/SELL theo ngày (1 ngày có thể có nhiều lệnh)
+  const markersByDate = new Map();
+  (markers || []).forEach(m => {
+    if (!markersByDate.has(m.date)) markersByDate.set(m.date, []);
+    markersByDate.get(m.date).push(m);
+  });
 
   // 2. Dựng nến kiểu "close-to-close": open = giá đóng phiên trước đó
   //    (data.json chỉ lưu giá trị cuối ngày, không có OHLC thật trong ngày)
@@ -569,6 +868,27 @@ function initChart(hist) {
     });
     lineSeries.applyOptions({ priceFormat: candleSeries.options().priceFormat });
 
+    // BUY/SELL markers — chỉ hiện ở khung Ngày (D), vì gộp theo Tuần/Tháng làm mất ý nghĩa ngày khớp lệnh
+    const activeSeries = showCandle ? candleSeries : lineSeries;
+    if (state.tf === 'D' && markersByDate.size) {
+      const chartMarkers = [];
+      for (const [date, txs] of markersByDate) {
+        const hasBuy = txs.some(t => t.action === 'BUY');
+        const hasSell = txs.some(t => t.action === 'SELL');
+        if (hasBuy) {
+          chartMarkers.push({ time: date, position: 'belowBar', color: '#3ddc97', shape: 'circle', text: 'B' });
+        }
+        if (hasSell) {
+          chartMarkers.push({ time: date, position: 'aboveBar', color: '#f8615a', shape: 'circle', text: 'S' });
+        }
+      }
+      chartMarkers.sort((a, b) => a.time.localeCompare(b.time));
+      activeSeries.setMarkers(chartMarkers);
+    } else {
+      activeSeries.setMarkers([]);
+    }
+    (showCandle ? lineSeries : candleSeries).setMarkers([]);
+
     applyRange();
   }
 
@@ -589,7 +909,7 @@ function initChart(hist) {
   wireSeg('tfSeg', 'tf');
   wireSeg('rangeSeg', 'range');
 
-  // ── Crosshair: hiện giá trị tại thời điểm đang trỏ ──
+  // ── Crosshair: hiện giá trị + giao dịch BUY/SELL tại thời điểm đang trỏ ──
   chart.subscribeCrosshairMove(param => {
     if (!param || !param.time || !param.point) {
       tooltip.style.display = 'none';
@@ -617,11 +937,31 @@ function initChart(hist) {
         rows += `<div class="tt-row"><span class="tt-lbl">VNINDEX</span><span>${(vd.value >= 0 ? '+' : '') + vd.value.toFixed(2)}%</span></div>`;
       }
     }
-    tooltip.innerHTML = `<div class="tt-date">${param.time}</div>${rows}`;
+
+    // Thông tin giao dịch BUY/SELL trong ngày đang trỏ (chỉ ở khung Ngày)
+    let txHtml = '';
+    if (state.tf === 'D') {
+      const txs = markersByDate.get(param.time);
+      if (txs && txs.length) {
+        txHtml += '<div class="tt-sep"></div>';
+        txs.forEach(t => {
+          const head = `${t.action} · ${t.symbol}`;
+          txHtml += `<div class="tt-tx">
+            <div class="tt-tx-head ${t.action === 'BUY' ? 'buy' : 'sell'}">${head}</div>
+            <div class="tt-row"><span class="tt-lbl">Giá</span><span>${fmtVND(t.price)}</span></div>
+            <div class="tt-row"><span class="tt-lbl">Khối lượng</span><span>${fmtNum(t.quantity, 0)}</span></div>
+            <div class="tt-row"><span class="tt-lbl">Giá trị</span><span>${fmtVND(t.value)}</span></div>
+            ${t.action === 'SELL' ? `<div class="tt-row"><span class="tt-lbl">Realized P&amp;L</span><span class="${t.realized_pnl >= 0 ? 'tt-up' : 'tt-down'}">${fmtVNDSigned(t.realized_pnl)}</span></div>` : ''}
+          </div>`;
+        });
+      }
+    }
+
+    tooltip.innerHTML = `<div class="tt-date">${param.time}</div>${rows}${txHtml}`;
     tooltip.style.display = 'block';
 
     const cw = container.clientWidth;
-    const tw = 160;
+    const tw = 220;
     let left = param.point.x + 14;
     if (left + tw > cw) left = param.point.x - tw - 14;
     tooltip.style.left = Math.max(4, left) + 'px';
@@ -631,19 +971,63 @@ function initChart(hist) {
   rebuild();
 }
 
-// ── ĐIỀU HƯỚNG TRANG (Tổng quan / Bảng dữ liệu) ─────────────────────────────
+// ── 06 · CHART DRAWDOWN (area, toàn bộ lịch sử) ──────────────────────────────
+function initDrawdownChart(series) {
+  const container = document.getElementById('ddChartContainer');
+  const tooltip = document.getElementById('ddChartTooltip');
+  if (!container || typeof LightweightCharts === 'undefined' || !series.length) return;
+
+  const chart = LightweightCharts.createChart(container, {
+    autoSize: true,
+    layout: { background: { color: 'transparent' }, textColor: '#7c8b9a', fontFamily: "'JetBrains Mono', monospace", fontSize: 10 },
+    grid: { vertLines: { color: '#1e2630' }, horzLines: { color: '#1e2630' } },
+    rightPriceScale: { borderColor: '#1e2630' },
+    timeScale: { borderColor: '#1e2630', rightOffset: 3 },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    handleScroll: true,
+    handleScale: true,
+  });
+
+  const areaSeries = chart.addAreaSeries({
+    lineColor: '#f8615a', topColor: 'rgba(248,97,90,0.35)', bottomColor: 'rgba(248,97,90,0.02)',
+    lineWidth: 2,
+    priceFormat: { type: 'custom', formatter: v => (v * 100).toFixed(2) + '%' },
+  });
+  areaSeries.setData(series.map(d => ({ time: d.date, value: d.drawdown })));
+  chart.timeScale().fitContent();
+
+  chart.subscribeCrosshairMove(param => {
+    if (!param || !param.time || !param.point) { tooltip.style.display = 'none'; return; }
+    const d = param.seriesData.get(areaSeries);
+    if (!d) { tooltip.style.display = 'none'; return; }
+    tooltip.innerHTML = `<div class="tt-date">${param.time}</div>
+      <div class="tt-row"><span class="tt-lbl">Drawdown</span><span class="tt-down">${(d.value * 100).toFixed(2)}%</span></div>`;
+    tooltip.style.display = 'block';
+    const cw = container.clientWidth;
+    const tw = 160;
+    let left = param.point.x + 14;
+    if (left + tw > cw) left = param.point.x - tw - 14;
+    tooltip.style.left = Math.max(4, left) + 'px';
+    tooltip.style.top = '6px';
+  });
+}
+
+// ── ĐIỀU HƯỚNG TRANG ─────────────────────────────────────────────────────────
 function initPageTabs() {
   const tabs = document.getElementById('pageTabs');
   if (!tabs || tabs.dataset.wired) return; // chỉ gắn sự kiện 1 lần
   tabs.dataset.wired = '1';
 
+  const PAGES = ['overview', 'pnl', 'allocation', 'contribution', 'drawdown', 'risk', 'table'];
+
   function showPage(name) {
+    if (!PAGES.includes(name)) name = 'overview';
     tabs.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.page === name));
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     const el = document.getElementById('page-' + name);
     if (el) el.classList.add('active');
     // Biểu đồ dùng canvas: cần resize lại khi panel vừa được hiện ra
-    if (name === 'overview') window.dispatchEvent(new Event('resize'));
+    if (name === 'overview' || name === 'drawdown') window.dispatchEvent(new Event('resize'));
   }
 
   tabs.addEventListener('click', e => {
@@ -655,13 +1039,11 @@ function initPageTabs() {
   });
 
   window.addEventListener('hashchange', () => {
-    const name = location.hash.replace('#', '') || 'overview';
-    showPage(name === 'table' ? 'table' : 'overview');
+    showPage(location.hash.replace('#', '') || 'overview');
   });
 
-  // Mở đúng trang theo hash lúc tải trang (cho phép link thẳng tới #table)
-  const initial = location.hash.replace('#', '');
-  showPage(initial === 'table' ? 'table' : 'overview');
+  // Mở đúng trang theo hash lúc tải trang (cho phép link thẳng tới #pnl, #allocation, ...)
+  showPage(location.hash.replace('#', ''));
 }
 
 loadData();

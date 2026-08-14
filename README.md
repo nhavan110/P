@@ -9,9 +9,21 @@ lên Google Drive.
 ```
 data/transactions.csv  ──┐
 data/price_history.csv ──┼──►  update_portfolio.py  ──┬──► data/portfolio_history.csv
-data/cashflows.csv     ──┘                             ├──► data/data.json
-                                                         └──► data/MyPortfolio.xlsx ──► Google Drive
+data/cashflows.csv     ──┘         │                   ├──► data/data.json
+                                    │                   └──► data/MyPortfolio.xlsx ──► Google Drive
+                                    ▼
+                          dashboard_analytics.py
+                   (positions, P&L, allocation, risk metrics,
+                    drawdown, XIRR, BUY/SELL markers cho index.html)
 ```
+
+`dashboard_analytics.py` chứa toàn bộ logic tính cho 6 mục còn lại của
+dashboard (Overview mở rộng, P&L, Allocation, Position Contribution,
+Drawdown, Risk/Market Metrics) — được `update_portfolio.py` gọi ở bước xuất
+`data.json`. Nếu cần tái tạo `data.json` mà không có mạng (không fetch giá
+mới), dùng `python3 build_offline_preview.py` — script này đọc lại
+`data/portfolio_history.csv` + `data/transactions.csv` đã cache sẵn, dùng
+chung `dashboard_analytics.py`, chỉ khác nguồn giá đầu vào.
 
 Nguyên tắc quan trọng nhất: **chỉ 3 file bên trái là dữ liệu gốc (source of
 truth), 3 file bên phải chỉ là kết quả tính ra.**
