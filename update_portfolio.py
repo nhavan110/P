@@ -17,21 +17,34 @@ from vnstock import Vnstock
 
 # ── CẤU HÌNH ─────────────────────────────────────────────────────────────────
 BASE_DIR     = Path(__file__).resolve().parent
-EXCEL_FILE   = BASE_DIR / "data" / "Portfolio.xlsx"
-OUTPUT_FILE  = BASE_DIR / "data" / "MyPortfolio.xlsx"
+PRICE_HISTORY_FILE     = BASE_DIR / "data" / "price_history.csv"      # giá thô (input/cache), KHÔNG chứa W/D hay kết quả
+CASHFLOWS_FILE          = BASE_DIR / "data" / "cashflows.csv"          # sổ nạp/rút tiền (W/D), tích luỹ dần
+PORTFOLIO_HISTORY_FILE  = BASE_DIR / "data" / "portfolio_history.csv"  # output: toàn bộ dữ liệu đã tính, ghi lại mỗi lần chạy
+OUTPUT_FILE  = BASE_DIR / "data" / "MyPortfolio.xlsx"                  # output: bản Excel định dạng đẹp để xem/Drive
 JSON_FILE    = BASE_DIR / "data" / "data.json"   # trong thư mục data/, khớp với fetch('data/data.json') trong index.html và được workflow "git add data/" commit
-MANUAL_FILE  = BASE_DIR / "manual_entries.csv"
+MANUAL_FILE  = BASE_DIR / "manual_entries.csv"       # inbox nhập W/D thủ công, tự xoá sau khi được gộp vào cashflows.csv
+TRANSACTIONS_FILE = BASE_DIR / "data" / "transactions.csv"  # sổ giao dịch mua/bán CP + margin — SOURCE OF TRUTH của holdings
 SHEET_NAME   = "Sheet1"
 VNI_START    = "2022-06-01"
 API_TEMPLATE = "https://api.simplize.vn/api/historical/quote/prices/{}?page=0&size=600"
+DEFAULT_STOCK_CODES = ["HPG", "TCB", "FPT", "PNJ", "FRT", "MWG", "MBB"]
 
 RISK_FREE_RATE = 0.04
 TRADING_DAYS   = 252
 
 
-# ── 1. ĐỌC DỮ LIỆU GỐC ───────────────────────────────────────────────────────
-df_pr = pd.read_excel(EXCEL_FILE, sheet_name=SHEET_NAME)
-stock_codes = [c for c in df_pr.columns if len(str(c)) == 3]
+# ── 1. ĐỌC LỊCH SỬ GIÁ (price_history.csv — chỉ giá thô) ────────────────────
+def load_price_history(path: Path) -> pd.DataFrame:
+    cols = ["date", *DEFAULT_STOCK_CODES, "VNINDEX"]
+    if not path.exists():
+        return pd.DataFrame(columns=cols)
+    df = pd.read_csv(path)
+    df["date"] = pd.to_datetime(df["date"], format="%d/%m/%Y")
+    return df.sort_values("date").reset_index(drop=True)
+
+
+price_hist   = load_price_history(PRICE_HISTORY_FILE)
+stock_codes  = [c for c in price_hist.columns if len(str(c)) == 3] or DEFAULT_STOCK_CODES
 
 
 # ── 2. LẤY GIÁ CỔ PHIẾU TỪ API ───────────────────────────────────────────────
@@ -65,37 +78,61 @@ df_prices["date"] = pd.to_datetime(df_prices["date"])
 df_all = df_prices.merge(df_vni, on="date", how="left")
 
 
-# ── 4. NỐI VỚI DỮ LIỆU CŨ ───────────────────────────────────────────────────
-df_pr["date"] = pd.to_datetime(df_pr["date"], format="%d/%m/%Y")
-last_update   = df_pr["date"].iloc[0]
+# ── 4. NỐI VỚI DỮ LIỆU CŨ, LƯU LẠI price_history.csv (chỉ giá thô) ──────────
+last_update = price_hist["date"].max() if not price_hist.empty else (pd.Timestamp(VNI_START) - pd.Timedelta(days=1))
 
-df_new  = df_all[df_all["date"] > last_update]
-df_pr   = (
-    pd.concat([df_new, df_pr], ignore_index=True)
-    .drop(columns=["Unnamed: 5", "Unnamed: 10"], errors="ignore")
+df_new     = df_all[df_all["date"] > last_update]
+price_hist = (
+    pd.concat([price_hist, df_new], ignore_index=True)
+    .drop_duplicates(subset="date", keep="last")
+    .sort_values("date")
     .fillna(0)
+    .reset_index(drop=True)
 )
 
+price_hist_out = price_hist.copy()
+price_hist_out["date"] = price_hist_out["date"].dt.strftime("%d/%m/%Y")
+PRICE_HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+price_hist_out.to_csv(PRICE_HISTORY_FILE, index=False)
+print(f"✅ Đã lưu: {PRICE_HISTORY_FILE} ({len(price_hist_out)} dòng)")
 
-# ── 5. CẬP NHẬT W / D TỪ FILE (thay cho input() thủ công) ───────────────────
+# df_pr = bảng làm việc trong bộ nhớ (mới nhất trước, khớp quy ước cũ) — không
+# ghi đè price_history.csv, các cột tính toán bên dưới chỉ tồn tại trong biến
+# này rồi xuất ra portfolio_history.csv / MyPortfolio.xlsx / data.json.
+df_pr = price_hist.sort_values("date", ascending=False).reset_index(drop=True)
+
+
+# ── 5. NẠP/RÚT TIỀN (W/D) — sổ cashflows.csv, thay cho input() thủ công ─────
 # Trước đây bước này hỏi trực tiếp trên terminal. Vì chạy tự động trên GitHub
 # Actions không có ai ngồi gõ, ta đọc từ manual_entries.csv thay thế.
 # Khi cần thêm W/D: mở file manual_entries.csv trên GitHub (web), thêm dòng
-# "date,type,value" (vd: 12/08/2026,D,10000000), rồi để lần chạy tiếp theo tự
-# áp dụng và tự xoá dòng đã xử lý.
+# "date,type,value" (vd: 12/08/2026,D,10000000). Lần chạy tiếp theo sẽ tự gộp
+# dòng đó vào data/cashflows.csv (sổ tích luỹ vĩnh viễn) rồi tự xoá dòng đã xử
+# lý khỏi manual_entries.csv. cashflows.csv KHÔNG bị ghi đè mỗi lần chạy như
+# portfolio_history.csv — nó chỉ được nối thêm (append), giống transactions.csv.
 df_pr["date_str"] = df_pr["date"].dt.strftime("%d/%m/%Y")
+valid_dates = set(df_pr["date_str"])
 
 
-def apply_manual_entries(df: pd.DataFrame, manual_file: Path) -> pd.DataFrame:
+def load_cashflows(path: Path) -> pd.DataFrame:
+    if not path.exists():
+        return pd.DataFrame(columns=["date", "type", "value"])
+    df = pd.read_csv(path)
+    return df if not df.empty else pd.DataFrame(columns=["date", "type", "value"])
+
+
+def apply_manual_entries(cashflows_df: pd.DataFrame, manual_file: Path,
+                          valid_dates: set) -> pd.DataFrame:
     if not manual_file.exists():
-        return df
+        return cashflows_df
     try:
         manual_df = pd.read_csv(manual_file)
     except pd.errors.EmptyDataError:
-        return df
+        return cashflows_df
     if manual_df.empty:
-        return df
+        return cashflows_df
 
+    new_rows = []
     for _, row in manual_df.iterrows():
         date_str = str(row["date"]).strip()
         option   = str(row["type"]).strip().upper()
@@ -107,84 +144,115 @@ def apply_manual_entries(df: pd.DataFrame, manual_file: Path) -> pd.DataFrame:
         except (ValueError, TypeError):
             print(f"⚠️  Bỏ qua dòng không hợp lệ (value='{row['value']}')")
             continue
-
-        mask = df["date_str"] == date_str
-        if not mask.any():
-            print(f"⚠️  Không tìm thấy ngày {date_str} trong dữ liệu, bỏ qua")
+        if date_str not in valid_dates:
+            print(f"⚠️  Không tìm thấy ngày {date_str} trong price_history.csv, bỏ qua")
             continue
-        df.loc[mask, option] = value
-        print(f"✅ Đã cập nhật {option} ngày {date_str} = {value:,.0f}")
+        new_rows.append({"date": date_str, "type": option, "value": value})
+        print(f"✅ Đã thêm {option} ngày {date_str} = {value:,.0f} vào cashflows.csv")
+
+    if new_rows:
+        cashflows_df = pd.concat([cashflows_df, pd.DataFrame(new_rows)], ignore_index=True)
 
     # Xoá các dòng đã xử lý, chỉ giữ lại header
     pd.DataFrame(columns=["date", "type", "value"]).to_csv(manual_file, index=False)
-    return df
+    return cashflows_df
 
 
-df_pr = apply_manual_entries(df_pr, MANUAL_FILE)
+cashflows = load_cashflows(CASHFLOWS_FILE)
+cashflows = apply_manual_entries(cashflows, MANUAL_FILE, valid_dates)
+CASHFLOWS_FILE.parent.mkdir(parents=True, exist_ok=True)
+cashflows.to_csv(CASHFLOWS_FILE, index=False)
+
+# Gộp W/D vào bảng làm việc. Nếu 1 ngày có nhiều dòng W (hoặc nhiều dòng D)
+# trong cashflows.csv, chúng được CỘNG DỒN — khác với bản cũ (ghi đè cột, chỉ
+# giữ được 1 giá trị/ngày/loại), đây là điểm sửa đúng hơn khi chuyển sang sổ
+# ghi nhận dạng ledger.
+if not cashflows.empty:
+    wd = (
+        cashflows.assign(value=cashflows["value"].astype(float))
+        .groupby(["date", "type"])["value"].sum()
+        .unstack(fill_value=0.0)
+        .reindex(columns=["W", "D"], fill_value=0.0)
+    )
+else:
+    wd = pd.DataFrame(columns=["W", "D"])
+
+df_pr = df_pr.merge(wd, left_on="date_str", right_index=True, how="left")
+df_pr[["W", "D"]] = df_pr[["W", "D"]].fillna(0.0)
 
 
 # ── 6. TÍNH E1 (VECTORIZED) ───────────────────────────────────────────────────
-def get_holdings(dates: pd.Series) -> pd.DataFrame:
+# Cột nội bộ b,c,d,e,f,g,h tương ứng các mã cổ phiếu theo đúng thứ tự cộng vào
+# E1 ở dưới (HPG, PNJ, TCB, MWG, MBB, FRT, FPT).
+SYMBOL_TO_COL = {
+    "HPG": "b", "PNJ": "c", "TCB": "d", "MWG": "e",
+    "MBB": "f", "FRT": "g", "FPT": "h",
+}
+HOLDING_COLS = ["b", "c", "d", "e", "f", "g", "h", "margin"]
+
+
+def load_transactions(path: Path) -> pd.DataFrame:
+    """Đọc data/transactions.csv — đây là SOURCE OF TRUTH của danh mục.
+    ⚠️ MỖI LẦN GIAO DỊCH: thêm 1 dòng mới vào file này (sửa trực tiếp trên
+    GitHub web, không cần chạy code ở máy). Cột:
+      date     : dd/mm/yyyy, ngày khớp lệnh
+      symbol   : mã CK (HPG, PNJ, TCB, MWG, MBB, FRT, FPT) hoặc MARGIN
+      action   : BUY / SELL (cho cổ phiếu)  hoặc  SET (cho MARGIN — đặt lại
+                 số dư margin hiện tại, vì margin là số dư nợ chứ không phải
+                 số lượng cộng dồn)
+      quantity : số lượng CP (BUY/SELL) hoặc số dư margin mới (SET)
+      note     : ghi chú tự do, không dùng để tính toán
     """
-    Trả về DataFrame các cột b,c,d,e,f,g,h,margin theo từng ngày.
-    ⚠️ MỖI LẦN GIAO DỊCH: thêm 1 dòng mới vào breakpoints bên dưới
-    (sửa trực tiếp file này trên GitHub web, không cần chạy code ở máy).
-    """
-    breakpoints = [
-        (datetime(2022,  9, 15), datetime(2023,  7,  6), dict(b=100)),
-        (datetime(2023,  7,  7), datetime(2023, 10,  3), dict(b=100, c=100)),
-        (datetime(2023, 10,  4), datetime(2023, 10, 20), dict(b=100, c=100, d=100)),
-        (datetime(2023, 10, 23), datetime(2023, 10, 30), dict(b=100, c=100, d=100, e=100)),
-        (datetime(2023, 10, 31), datetime(2024,  4,  1), dict(b=100, c=100, d=100, e=200)),
-        (datetime(2024,  4,  2), datetime(2024,  5, 22), dict(b=100, d=100, e=200)),
-        (datetime(2024,  5, 23), datetime(2024,  6,  6), dict(b=110, d=100, e=200)),
-        (datetime(2024,  6,  7), datetime(2024,  6, 19), dict(b=110, d=100, e=200, f=100)),
-        (datetime(2024,  6, 20), datetime(2024,  8,  5), dict(b=110, d=200, e=200, f=100)),
-        (datetime(2024,  8,  6), datetime(2024,  8, 11), dict(b=110, d=200, e=100, f=100)),
-        (datetime(2024,  8, 12), datetime(2024,  9,  4), dict(b=110, d=300, e=100, f=100)),
-        (datetime(2024,  9,  5), datetime(2024,  9, 18), dict(b=210, d=300, e=100, f=100)),
-        (datetime(2024,  9, 19), datetime(2025,  1,  6), dict(b=210, d=400, e=100, f=100)),
-        (datetime(2025,  1,  7), datetime(2025,  3, 23), dict(b=210, d=400, e=100, f=115)),
-        (datetime(2025,  3, 24), datetime(2025,  4,  3), dict(b=210, d=400, e=100)),
-        (datetime(2025,  4,  4), datetime(2025,  4,  8), dict(b=310, d=400, e=100)),
-        (datetime(2025,  4,  9), datetime(2025,  6, 12), dict(b=410, d=500, e=200)),
-        (datetime(2025,  6, 13), datetime(2025,  7,  6), dict(b=492, d=500, e=200)),
-        (datetime(2025,  7,  7), datetime(2025,  7, 10), dict(b=592, d=500, e=200, margin=2345000)),
-        (datetime(2025,  7, 11), datetime(2025,  7, 17), dict(b=392, d=500, e=200)),
-        (datetime(2025,  7, 18), datetime(2025,  8, 11), dict(b=392, d=100, e=200)),
-        (datetime(2025,  8, 12), datetime(2025,  9, 18), dict(b=192, d=100, e=200)),
-        (datetime(2025,  9, 19), datetime(2025,  9, 25), dict(b=192, d=100, e=200, g=100)),
-        (datetime(2025,  9, 26), datetime(2025,  9, 28), dict(b=300, d=100, e=400, g=100, margin=8391768)),
-        (datetime(2025,  9, 29), datetime(2025,  9, 29), dict(b=200, d=100, e=400, g=100, margin=8391768)),
-        (datetime(2025,  9, 30), datetime(2025, 10, 13), dict(b=200, d=100, e=200, g=100, margin=8291768)),
-        (datetime(2025, 10, 14), datetime(2025, 12, 14), dict(b=400, d=100, e=200, g=100, margin=14081631)),
-        (datetime(2025, 12, 15), datetime(2026,  1, 21), dict(b=400, d=100, e=200, g=100, h=100, margin=23446444)),
-        (datetime(2026,  1, 22), datetime(2026,  1, 25), dict(b=400, d=100, e=0,   g=100, h=100, margin=23446783)),
-        (datetime(2026,  1, 26), datetime(2026,  2, 23), dict(b=400, d=100, g=100, h=100, margin=15000000)),
-        (datetime(2026,  2, 24), datetime(2026,  3,  1), dict(b=400, d=100, g=100, h=300, margin=22000000)),
-        (datetime(2026,  3,  2), datetime(2026,  3, 26), dict(b=400, d=100, g=0,   h=300, margin=16000000)),
-        (datetime(2026,  3, 27), datetime(2026,  5, 10), dict(b=400, d=100, h=300, margin=8000000)),
-        (datetime(2026,  5, 11), datetime(2026,  5, 24), dict(b=400, d=100, h=400, margin=15007665)),
-        (datetime(2026,  5, 25), datetime(2026,  6,  2), dict(b=440, d=100, h=400, margin=15007665)),
-        (datetime(2026,  6,  3), datetime(2026,  6,  9), dict(b=440, c=100, d=100, h=400, margin=17810000)),
-        (datetime(2026,  6, 10), datetime(2026,  7,  5), dict(b=440, c=100, d=100, h=400, margin=17363606)),
-        (datetime(2026,  7,  6), datetime(2026,  7,  7), dict(b=440, c=300, d=100, h=400, margin=22000000)),
-        (datetime(2026,  7,  8), datetime(2026,  7,  8), dict(b=440, c=1100, d=100, h=400, margin=36000000)),
-        (datetime(2026,  7,  9), datetime(2026,  7, 22), dict(b=440, c=1600, d=100, h=400, margin=43000000)),
-        (datetime(2026,  7, 23), datetime(2026,  7, 26), dict(b=440, c=1600, d=100, h=400, margin=33000000)),
-        (datetime(2026,  7, 27), datetime(2099,  7,  8), dict(b=440, c=1600, d=100, h=400, margin=28000000)),
-    ]
-    cols = ["b", "c", "d", "e", "f", "g", "h", "margin"]
-    result = pd.DataFrame(0, index=dates.index, columns=cols)
-    for start, end, vals in breakpoints:
-        mask = (dates >= start) & (dates <= end)
-        for col, val in vals.items():
-            result.loc[mask, col] = val
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Không tìm thấy {path}. Cần có data/transactions.csv làm nguồn "
+            "dữ liệu giao dịch (xem cột date,symbol,action,quantity,note)."
+        )
+    tx = pd.read_csv(path, dtype={"note": str})
+    if tx.empty:
+        return tx
+    tx["date"] = pd.to_datetime(tx["date"], format="%d/%m/%Y")
+    unknown = ~tx["symbol"].isin(list(SYMBOL_TO_COL) + ["MARGIN"])
+    if unknown.any():
+        bad = tx.loc[unknown, "symbol"].unique().tolist()
+        raise ValueError(f"transactions.csv có symbol không hợp lệ: {bad}")
+    bad_action = ~(
+        ((tx["symbol"] != "MARGIN") & tx["action"].isin(["BUY", "SELL"]))
+        | ((tx["symbol"] == "MARGIN") & (tx["action"] == "SET"))
+    )
+    if bad_action.any():
+        raise ValueError(
+            "transactions.csv có action không hợp lệ ở các dòng:\n"
+            f"{tx.loc[bad_action]}"
+        )
+    return tx.sort_values("date").reset_index(drop=True)
+
+
+def get_holdings(dates: pd.Series, transactions: pd.DataFrame) -> pd.DataFrame:
+    """Xây holdings (b,c,d,e,f,g,h,margin) theo từng ngày bằng cách cộng dồn
+    (BUY/SELL) hoặc gán lại (SET, dùng cho margin) các giao dịch theo thời
+    gian, rồi forward-fill sang các ngày sau đó — thay cho breakpoints
+    hard-code trước đây."""
+    result = pd.DataFrame(0.0, index=dates.index, columns=HOLDING_COLS)
+    if transactions.empty:
+        return result
+
+    running = {c: 0.0 for c in HOLDING_COLS}
+    for _, row in transactions.iterrows():
+        if row["symbol"] == "MARGIN":
+            col = "margin"
+            running[col] = float(row["quantity"])
+        else:
+            col = SYMBOL_TO_COL[row["symbol"]]
+            delta = row["quantity"] if row["action"] == "BUY" else -row["quantity"]
+            running[col] += float(delta)
+        result.loc[dates >= row["date"], col] = running[col]
     return result
 
 
 dates_dt = pd.to_datetime(df_pr["date"])
-holdings = get_holdings(dates_dt)
+transactions = load_transactions(TRANSACTIONS_FILE)
+holdings = get_holdings(dates_dt, transactions)
 
 df_pr["E1"] = (
       df_pr["HPG"] * holdings["b"]
@@ -235,7 +303,10 @@ for _, idx in df_pr.groupby("YR").groups.items():
     df_pr.loc[idx, "MaxDrawdown"] = max_dd
 
 
-# ── 8. GHI EXCEL (Sheet1) ────────────────────────────────────────────────────
+# ── 8. XUẤT portfolio_history.csv (toàn bộ dữ liệu đã tính) ─────────────────
+# File này là OUTPUT (derived), ghi đè hoàn toàn mỗi lần chạy — không phải nơi
+# lưu trữ dữ liệu gốc nữa. Nguồn dữ liệu gốc thật sự là transactions.csv,
+# price_history.csv và cashflows.csv (3 file đó mới cần backup/không được xoá).
 df_pr["date"] = pd.to_datetime(df_pr["date"]).dt.strftime("%d/%m/%Y")
 df_pr = df_pr.drop(columns=["date_str"], errors="ignore")
 
@@ -243,8 +314,9 @@ cols_to_drop = ["DR+1", "DR+1(VNI)", "CR+1", "CR+1(VNI)", "CR(VNI)",
                 "MonthYear", "Cumulative_DR_M", "Year", "Year_tmp",
                 "Cumulative_DR_Y", "Cumulative_DR_Y(VNI)"]
 df_save = df_pr.drop(columns=[c for c in cols_to_drop if c in df_pr.columns])
-EXCEL_FILE.parent.mkdir(parents=True, exist_ok=True)
-df_save.to_excel(EXCEL_FILE, sheet_name=SHEET_NAME, index=False)
+PORTFOLIO_HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+df_save.to_csv(PORTFOLIO_HISTORY_FILE, index=False)
+print(f"✅ Đã lưu: {PORTFOLIO_HISTORY_FILE}")
 
 
 # ── 9. THỐNG KÊ THÁNG / NĂM ──────────────────────────────────────────────────
