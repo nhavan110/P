@@ -190,6 +190,22 @@
   footer{
     text-align:center; margin-top:24px; font-size:10px; color:var(--muted);
   }
+
+  /* ── Điều hướng trang ── */
+  nav.tabs{
+    display:flex; gap:6px; background:var(--panel); border:1px solid var(--panel-border);
+    border-radius:12px; padding:5px; margin-bottom:16px;
+  }
+  nav.tabs button{
+    flex:1; background:transparent; border:none; border-radius:8px;
+    color:var(--muted); font-family:'JetBrains Mono', monospace;
+    font-size:12px; font-weight:500; padding:9px 10px; cursor:pointer;
+    transition:background .15s, color .15s;
+  }
+  nav.tabs button.active{ background:var(--mint); color:#04231a; font-weight:700; }
+  nav.tabs button:hover:not(.active){ color:var(--text); }
+  .page{ display:none; }
+  .page.active{ display:block; }
 </style>
 </head>
 <body>
@@ -200,7 +216,13 @@
       <div class="updated" id="updated">Đang tải…</div>
     </header>
 
-    <div id="content"></div>
+    <nav class="tabs" id="pageTabs">
+      <button type="button" data-page="overview" class="active">01 · Tổng quan</button>
+      <button type="button" data-page="table">02 · Bảng dữ liệu</button>
+    </nav>
+
+    <div id="page-overview" class="page active"></div>
+    <div id="page-table" class="page"></div>
 
     <footer>Tự động cập nhật qua GitHub Actions · dữ liệu từ data/data.json</footer>
   </div>
@@ -213,7 +235,10 @@ async function loadData() {
     const json = await res.json();
     render(json);
   } catch (e) {
-    document.getElementById('content').innerHTML = `
+    document.getElementById('pageTabs').style.display = 'none';
+    document.getElementById('page-table').style.display = 'none';
+    document.getElementById('page-overview').classList.add('active');
+    document.getElementById('page-overview').innerHTML = `
       <div class="empty">
         Chưa có dữ liệu.<br><br>
         Chạy workflow lần đầu (tab <b>Actions</b> → <b>Update Portfolio</b> → <b>Run workflow</b>)
@@ -240,7 +265,7 @@ function render(json) {
 
   const crClass = (s.cumulative_return ?? 0) >= 0 ? 'pos' : 'neg';
 
-  document.getElementById('content').innerHTML = `
+  document.getElementById('page-overview').innerHTML = `
     <div class="hero">
       <div class="hero-value">${fmtVND(s.portfolio_value ?? 0)}</div>
       <div class="hero-sub">
@@ -299,7 +324,9 @@ function render(json) {
         <div class="chart-tooltip" id="chartTooltip"></div>
       </div>
     </div>
+  `;
 
+  document.getElementById('page-table').innerHTML = `
     <div class="table-panel">
       <div class="table-title">
         <span>Bảng dữ liệu chi tiết (${hist.length} phiên)</span>
@@ -310,6 +337,7 @@ function render(json) {
   `;
 
   buildTable(hist);
+  initPageTabs();
 
   try {
     initChart(hist);
@@ -601,6 +629,39 @@ function initChart(hist) {
   });
 
   rebuild();
+}
+
+// ── ĐIỀU HƯỚNG TRANG (Tổng quan / Bảng dữ liệu) ─────────────────────────────
+function initPageTabs() {
+  const tabs = document.getElementById('pageTabs');
+  if (!tabs || tabs.dataset.wired) return; // chỉ gắn sự kiện 1 lần
+  tabs.dataset.wired = '1';
+
+  function showPage(name) {
+    tabs.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.page === name));
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    const el = document.getElementById('page-' + name);
+    if (el) el.classList.add('active');
+    // Biểu đồ dùng canvas: cần resize lại khi panel vừa được hiện ra
+    if (name === 'overview') window.dispatchEvent(new Event('resize'));
+  }
+
+  tabs.addEventListener('click', e => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    const name = btn.dataset.page;
+    if (location.hash !== '#' + name) location.hash = name;
+    else showPage(name);
+  });
+
+  window.addEventListener('hashchange', () => {
+    const name = location.hash.replace('#', '') || 'overview';
+    showPage(name === 'table' ? 'table' : 'overview');
+  });
+
+  // Mở đúng trang theo hash lúc tải trang (cho phép link thẳng tới #table)
+  const initial = location.hash.replace('#', '');
+  showPage(initial === 'table' ? 'table' : 'overview');
 }
 
 loadData();
