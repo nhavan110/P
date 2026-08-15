@@ -117,6 +117,13 @@
   .seg button.active{background:var(--mint); color:#04231a; font-weight:700;}
   .seg button:hover:not(.active){color:var(--text);}
 
+  .year-select{
+    background:var(--bg); border:1px solid var(--panel-border); color:var(--text);
+    font-family:'JetBrains Mono', monospace; font-size:11px; font-weight:500;
+    padding:6px 10px; border-radius:8px; cursor:pointer; outline:none;
+  }
+  .year-select:hover{ border-color:var(--mint); }
+
   .chart-wrap{position:relative;}
   #chartContainer{width:100%; height:280px;}
 
@@ -148,13 +155,20 @@
     margin-bottom:16px;
   }
   /* Thoát khỏi giới hạn max-width:760px của .wrap để bảng có nhiều chỗ hơn,
-     tránh cuộn ngang quá nhiều khi đã có nhiều cột */
+     tránh cuộn ngang quá nhiều khi đã có nhiều cột.
+     Dùng margin: calc(50% - Nvw) thay vì left/margin-left trộn đơn vị %/vw
+     (bug cũ khiến bảng bị lệch hẳn sang trái trên màn hình rộng, vì % ở "left"
+     tính theo chiều rộng .wrap chứ không phải theo viewport như "vw"). */
   #page-table{
-    max-width:none; width:100vw; position:relative;
-    left:50%; margin-left:-50vw; padding:0 12px;
+    max-width:none; width:100vw;
+    margin-left:calc(50% - 50vw); margin-right:calc(50% - 50vw);
+    padding:0 12px;
   }
   @media (min-width:900px){
-    #page-table{ max-width:1400px; width:96vw; left:50%; margin-left:-48vw; }
+    #page-table{
+      max-width:1300px; width:92vw;
+      margin-left:calc(50% - 46vw); margin-right:calc(50% - 46vw);
+    }
   }
   .table-title{
     font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.1em;
@@ -166,16 +180,16 @@
     overflow:auto; max-height:560px; border:1px solid var(--panel-border); border-radius:10px;
   }
   table.dtable{
-    border-collapse:collapse; font-size:9.5px; white-space:nowrap; min-width:100%;
+    border-collapse:collapse; font-size:11px; white-space:nowrap; width:100%;
   }
   table.dtable th, table.dtable td{
-    padding:4px 6px; text-align:right; border-bottom:1px solid var(--panel-border);
+    padding:6px 9px; text-align:right; border-bottom:1px solid var(--panel-border);
     border-right:1px solid var(--panel-border);
   }
   table.dtable th{
     position:sticky; top:0; z-index:2;
     background:#161d25; color:var(--text); font-weight:700; text-align:right;
-    font-family:'Space Grotesk', sans-serif; font-size:9px;
+    font-family:'Space Grotesk', sans-serif; font-size:10px;
   }
   table.dtable td.dt-date, table.dtable th.dt-date{
     text-align:left; position:sticky; left:0; z-index:1;
@@ -308,12 +322,12 @@ function render(json) {
 
     <div class="grid">
       <div class="stat">
-        <div class="lbl">Sharpe ratio</div>
-        <div class="val">${s.sharpe_ratio != null ? s.sharpe_ratio.toFixed(2) : '—'}</div>
+        <div class="lbl">Sharpe ratio (tổng)</div>
+        <div class="val">${s.sharpe_total != null ? s.sharpe_total.toFixed(2) : '—'}</div>
       </div>
       <div class="stat">
-        <div class="lbl">Max drawdown</div>
-        <div class="val neg">${s.max_drawdown != null ? fmtPct(s.max_drawdown) : '—'}</div>
+        <div class="lbl">Max drawdown (tổng)</div>
+        <div class="val neg">${s.max_drawdown_total != null ? fmtPct(s.max_drawdown_total) : '—'}</div>
       </div>
     </div>
 
@@ -339,13 +353,6 @@ function render(json) {
           <button data-v="W" type="button">Tuần</button>
           <button data-v="M" type="button">Tháng</button>
         </div>
-        <div class="seg" id="rangeSeg">
-          <button data-v="1M" type="button">1T</button>
-          <button data-v="3M" type="button">3T</button>
-          <button data-v="6M" type="button">6T</button>
-          <button data-v="1Y" type="button">1N</button>
-          <button data-v="ALL" class="active" type="button">Tất cả</button>
-        </div>
       </div>
       <div class="chart-wrap">
         <div id="chartContainer"></div>
@@ -354,46 +361,16 @@ function render(json) {
     </div>
 
     <div class="chart-panel">
-      <div class="chart-title"><span>Rủi ro &amp; hiệu suất (tổng)</span></div>
-      <div class="grid" style="margin-bottom:0;">
-        <div class="stat">
-          <div class="lbl">Beta</div>
-          <div class="val">${s.beta_total != null ? fmtNum2(s.beta_total) : '—'}</div>
-        </div>
-        <div class="stat">
-          <div class="lbl">Alpha</div>
-          <div class="val ${(s.alpha_total ?? 0) >= 0 ? 'pos' : 'neg'}">${s.alpha_total != null ? fmtPct(s.alpha_total) : '—'}</div>
-        </div>
-        <div class="stat">
-          <div class="lbl">Volatility</div>
-          <div class="val">${s.volatility_total != null ? fmtPct(s.volatility_total) : '—'}</div>
-        </div>
-        <div class="stat">
-          <div class="lbl">Correlation</div>
-          <div class="val">${s.correlation_total != null ? fmtNum2(s.correlation_total) : '—'}</div>
-        </div>
-        <div class="stat">
-          <div class="lbl">Sharpe (tổng)</div>
-          <div class="val">${s.sharpe_total != null ? fmtNum2(s.sharpe_total) : '—'}</div>
-        </div>
-        <div class="stat">
-          <div class="lbl">Max drawdown (tổng)</div>
-          <div class="val neg">${s.max_drawdown_total != null ? fmtPct(s.max_drawdown_total) : '—'}</div>
-        </div>
-        <div class="stat">
-          <div class="lbl">XIRR (tổng)</div>
-          <div class="val ${(s.xirr_total ?? 0) >= 0 ? 'pos' : 'neg'}">${s.xirr_total != null ? fmtPct(s.xirr_total) : '—'}</div>
-        </div>
+      <div class="chart-title">
+        <span>Rủi ro &amp; hiệu suất</span>
+        <select class="year-select" id="riskPeriodSelect"></select>
       </div>
+      <div class="grid" style="margin-bottom:0;" id="riskGrid"></div>
     </div>
 
     <div class="table-panel" id="positionsPanel">
       <div class="table-title">
         <span>Phân bổ danh mục${pos.as_of_date ? ' · ' + fmtDate(pos.as_of_date) : ''}</span>
-        <div class="seg" id="posToggle">
-          <button data-v="year" class="active" type="button">Năm</button>
-          <button data-v="total" type="button">Tổng</button>
-        </div>
       </div>
       <div id="positionsTableWrap"></div>
     </div>
@@ -411,7 +388,8 @@ function render(json) {
 
   buildTable(hist);
   initPageTabs();
-  wirePositionsToggle(pos.items ?? []);
+  buildPositionsTable(pos.items ?? []);
+  wireRiskPanel(s, hist);
 
   try {
     initChart(hist, events);
@@ -453,13 +431,6 @@ const TABLE_COLS = [
   { key: 'YR(VNI)',      label: 'YR(VNI)',       cls: 'g-stat',   fmt: v => fmtPct(v),  merge: true },
   { key: 'Sharpe',       label: 'Sharpe ratio',  cls: 'g-stat',   fmt: v => fmtNum(v, 2), merge: true },
   { key: 'MaxDrawdown',  label: 'Max drawdown',  cls: 'g-stat',   fmt: v => fmtPct(v),  merge: true },
-  { key: 'Beta',         label: 'Beta',          cls: 'g-stat',   fmt: v => fmtNum(v, 2), merge: true },
-  { key: 'Alpha',        label: 'Alpha',         cls: 'g-stat',   fmt: v => fmtPct(v),  merge: true },
-  { key: 'Volatility',   label: 'Volatility',    cls: 'g-stat',   fmt: v => fmtPct(v),  merge: true },
-  { key: 'Correlation',  label: 'Correlation',   cls: 'g-stat',   fmt: v => fmtNum(v, 2), merge: true },
-  { key: 'XIRR_Year',    label: 'XIRR (năm)',    cls: 'g-stat',   fmt: v => fmtPct(v),  merge: true },
-  { key: 'Sharpe_Total',     label: 'Sharpe (tổng)',       cls: 'g-stat', fmt: v => fmtNum(v, 2), merge: true },
-  { key: 'MaxDrawdown_Total',label: 'Max drawdown (tổng)', cls: 'g-stat', fmt: v => fmtPct(v),  merge: true },
 ];
 
 function fmtNum(n, decimals) {
@@ -523,57 +494,110 @@ function buildTable(hist) {
   wrap.innerHTML = `<table class="dtable">${thead}<tbody>${bodyRows}</tbody></table>`;
 }
 
-// ── PHÂN BỔ DANH MỤC (bảng gọn trên tab Tổng quan, toggle Năm/Tổng) ─────────
-let posState = { mode: 'year' };
-
-function buildPositionsTable(items, mode) {
+// ── PHÂN BỔ DANH MỤC (bảng gọn trên tab Tổng quan) ──────────────────────────
+function buildPositionsTable(items) {
   const wrap = document.getElementById('positionsTableWrap');
   if (!wrap) return;
   if (!items.length) {
     wrap.innerHTML = '<div style="padding:12px 4px;color:var(--muted);font-size:12px;">Chưa có dữ liệu phân bổ.</div>';
     return;
   }
-  const retKey  = mode === 'total' ? 'return_total'       : 'return_year';
-  const ctbKey  = mode === 'total' ? 'contribution_total' : 'contribution_year';
 
-  const rows = [...items].sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0)).map(p => {
-    const ret = p[retKey];
-    const ctb = p[ctbKey];
-    const retCls = ret == null ? '' : (ret >= 0 ? 'pos' : 'neg');
-    const ctbCls = ctb == null ? '' : (ctb >= 0 ? 'pos' : 'neg');
-    return `<tr>
+  const rows = [...items].sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0)).map(p => `<tr>
       <td class="pt-sym">${p.symbol ?? '—'}</td>
       <td class="pt-sector">${p.sector ?? '—'}</td>
       <td>${fmtNum(p.qty, 0)}</td>
       <td>${fmtNum(p.price, 0)}</td>
       <td>${p.value != null ? fmtVND(p.value) : '—'}</td>
       <td>${fmtPctPlain(p.weight)}</td>
-      <td class="${retCls}">${ret != null ? fmtPct(ret) : '—'}</td>
-      <td class="${ctbCls}">${ctb != null ? fmtPct(ctb) : '—'}</td>
-    </tr>`;
-  }).join('');
+    </tr>`).join('');
 
   wrap.innerHTML = `<table class="postable">
     <thead><tr>
-      <th class="pt-sym">Mã</th><th class="pt-sector">Ngành</th><th>KL</th><th>Giá</th>
-      <th>Giá trị</th><th>Tỷ trọng</th><th>Lợi nhuận</th><th>Đóng góp</th>
+      <th class="pt-sym">Mã</th><th class="pt-sector">Ngành</th><th>KL</th><th>Thị giá</th>
+      <th>Giá trị</th><th>Tỷ trọng</th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
 }
 
-function wirePositionsToggle(items) {
-  const seg = document.getElementById('posToggle');
-  buildPositionsTable(items, posState.mode);
-  if (!seg) return;
-  seg.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.v === posState.mode));
-  seg.onclick = e => {
-    const btn = e.target.closest('button');
-    if (!btn) return;
-    seg.querySelectorAll('button').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    posState.mode = btn.dataset.v;
-    buildPositionsTable(items, posState.mode);
+// ── RỦI RO & HIỆU SUẤT (dropdown chọn Tất cả / theo từng năm) ──────────────
+function riskMetricsForYear(hist, year) {
+  // Các cột Beta/Alpha/Volatility/Correlation/Sharpe/MaxDrawdown/XIRR_Year
+  // giữ nguyên giá trị suốt cả năm đó trong data.json, nên lấy dòng gần nhất
+  // của năm là đủ đại diện cho cả năm.
+  let row = null;
+  for (const r of hist) {
+    if (r.date && r.date.slice(0, 4) === year) row = r;
+  }
+  if (!row) return null;
+  return {
+    beta: row.Beta, alpha: row.Alpha, volatility: row.Volatility,
+    correlation: row.Correlation, sharpe: row.Sharpe,
+    maxdrawdown: row.MaxDrawdown, xirr: row.XIRR_Year,
+  };
+}
+
+function riskMetricsTotal(s) {
+  return {
+    beta: s.beta_total, alpha: s.alpha_total, volatility: s.volatility_total,
+    correlation: s.correlation_total, sharpe: s.sharpe_total,
+    maxdrawdown: s.max_drawdown_total, xirr: s.xirr_total,
+  };
+}
+
+function renderRiskGrid(m) {
+  const grid = document.getElementById('riskGrid');
+  if (!grid) return;
+  m = m || {};
+  grid.innerHTML = `
+    <div class="stat">
+      <div class="lbl">Beta</div>
+      <div class="val">${m.beta != null ? fmtNum2(m.beta) : '—'}</div>
+    </div>
+    <div class="stat">
+      <div class="lbl">Alpha</div>
+      <div class="val ${(m.alpha ?? 0) >= 0 ? 'pos' : 'neg'}">${m.alpha != null ? fmtPct(m.alpha) : '—'}</div>
+    </div>
+    <div class="stat">
+      <div class="lbl">Volatility</div>
+      <div class="val">${m.volatility != null ? fmtPct(m.volatility) : '—'}</div>
+    </div>
+    <div class="stat">
+      <div class="lbl">Correlation</div>
+      <div class="val">${m.correlation != null ? fmtNum2(m.correlation) : '—'}</div>
+    </div>
+    <div class="stat">
+      <div class="lbl">Sharpe ratio</div>
+      <div class="val">${m.sharpe != null ? fmtNum2(m.sharpe) : '—'}</div>
+    </div>
+    <div class="stat">
+      <div class="lbl">Max drawdown</div>
+      <div class="val neg">${m.maxdrawdown != null ? fmtPct(m.maxdrawdown) : '—'}</div>
+    </div>
+    <div class="stat">
+      <div class="lbl">XIRR</div>
+      <div class="val ${(m.xirr ?? 0) >= 0 ? 'pos' : 'neg'}">${m.xirr != null ? fmtPct(m.xirr) : '—'}</div>
+    </div>
+  `;
+}
+
+function wireRiskPanel(s, hist) {
+  const select = document.getElementById('riskPeriodSelect');
+  if (!select) return;
+
+  const years = [...new Set(hist.map(r => (r.date || '').slice(0, 4)).filter(Boolean))]
+    .sort((a, b) => b.localeCompare(a));
+
+  select.innerHTML = `<option value="total">Tất cả</option>` +
+    years.map(y => `<option value="${y}">${y}</option>`).join('');
+  select.value = 'total';
+
+  renderRiskGrid(riskMetricsTotal(s));
+
+  select.onchange = () => {
+    const v = select.value;
+    renderRiskGrid(v === 'total' ? riskMetricsTotal(s) : riskMetricsForYear(hist, v));
   };
 }
 
@@ -582,9 +606,12 @@ function initChart(hist, events) {
   if (typeof LightweightCharts === 'undefined' || !hist.length) return;
 
   // 0. Map ngày → sự kiện BUY/SELL (dùng cho marker trên chart + tooltip)
+  //    Bỏ qua các sự kiện có giá trị cashflow = 0: đây là chia tách/gộp cổ phiếu,
+  //    mua lại cổ phiếu quỹ,... không phải giao dịch mua/bán thực nên không gắn icon.
   const eventsByDate = new Map();
   (events || []).forEach(ev => {
     if (!ev || !ev.date) return;
+    if (!ev.value) return;
     if (!eventsByDate.has(ev.date)) eventsByDate.set(ev.date, []);
     eventsByDate.get(ev.date).push(ev);
   });
@@ -673,7 +700,7 @@ function initChart(hist, events) {
   const lineSeries = chart.addLineSeries({ color: '#3ddc97', lineWidth: 2 });
   const vniSeries = chart.addLineSeries({ color: '#7a8ea3', lineWidth: 1.5 });
 
-  const state = { metric: 'value', type: 'candle', tf: 'D', range: 'ALL' };
+  const state = { metric: 'value', type: 'candle', tf: 'D' };
 
   function currentData() {
     const src = state.metric === 'value' ? dailyOHLC.value : dailyOHLC.pct;
@@ -683,25 +710,26 @@ function initChart(hist, events) {
     return aggregate(dailyVniOHLC, state.tf);
   }
 
-  function applyRange() {
-    const times = lastRenderedTimes;
-    if (!times || !times.length) return;
-    if (state.range === 'ALL') { chart.timeScale().fitContent(); return; }
-    const days = { '1M': 30, '3M': 90, '6M': 182, '1Y': 365 }[state.range];
-    const to = times[times.length - 1];
-    const fromDate = new Date(to + 'T00:00:00');
-    fromDate.setDate(fromDate.getDate() - days);
-    const from = fromDate.toISOString().slice(0, 10);
-    try {
-      chart.timeScale().setVisibleRange({ from, to });
-    } catch (e) { chart.timeScale().fitContent(); }
+  // Gộp sự kiện BUY/SELL theo cùng đơn vị thời gian đang hiển thị (Ngày/Tuần/Tháng)
+  // để mỗi nến tuần/tháng vẫn hiện đủ icon mua/bán diễn ra trong kỳ đó.
+  function eventsGroupedByTf(tf) {
+    if (tf === 'D') return eventsByDate;
+    const map = new Map();
+    for (const [date, evs] of eventsByDate) {
+      const key = periodKey(date, tf);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(...evs);
+    }
+    return map;
   }
 
   let lastRenderedTimes = [];
+  let currentEventsByPeriod = eventsByDate;
 
   function rebuild() {
     const ohlc = currentData();
     lastRenderedTimes = ohlc.map(c => c.time);
+    currentEventsByPeriod = eventsGroupedByTf(state.tf);
     const showCandle = state.type === 'candle';
     const showVni = !showCandle && state.metric === 'pct';
 
@@ -727,32 +755,46 @@ function initChart(hist, events) {
     lineSeries.applyOptions({ priceFormat: candleSeries.options().priceFormat });
 
     updateMarkers();
-    applyRange();
+    chart.timeScale().fitContent();
   }
 
-  // ── Marker BUY/SELL trên chart: chỉ hiện ở khung Ngày (event gắn theo ngày cụ thể;
-  //    gộp theo Tuần/Tháng sẽ lệch ngày nên ẩn marker) ──
+  // Gộp danh sách event (cùng mã + cùng loại lệnh trong 1 kỳ hiển thị) thành 1 dòng
+  // duy nhất, cộng dồn khối lượng + giá trị, để tránh chồng nhiều icon/dòng trùng mã.
+  function groupEvents(evs) {
+    const map = new Map();
+    evs.forEach(ev => {
+      const key = ev.symbol + '|' + ev.action;
+      if (!map.has(key)) map.set(key, { symbol: ev.symbol, action: ev.action, qty: 0, value: 0 });
+      const g = map.get(key);
+      g.qty += ev.quantity || 0;
+      g.value += ev.value || 0;
+    });
+    return [...map.values()];
+  }
+
+  // ── Marker BUY/SELL trên chart: hiện ở mọi khung Ngày/Tuần/Tháng,
+  //    gộp theo kỳ đang xem để không bị lệch ngày ──
   function updateMarkers() {
     const activeSeries = state.type === 'candle' ? candleSeries : lineSeries;
     const otherSeries = state.type === 'candle' ? lineSeries : candleSeries;
     otherSeries.setMarkers([]);
 
-    if (state.tf !== 'D' || eventsByDate.size === 0) {
+    if (!currentEventsByPeriod || currentEventsByPeriod.size === 0) {
       activeSeries.setMarkers([]);
       return;
     }
     const validTimes = new Set(lastRenderedTimes);
     const markers = [];
-    for (const [date, evs] of eventsByDate) {
-      if (!validTimes.has(date)) continue;
-      evs.forEach(ev => {
-        const isBuy = ev.action === 'BUY';
+    for (const [key, evs] of currentEventsByPeriod) {
+      if (!validTimes.has(key)) continue;
+      groupEvents(evs).forEach(g => {
+        const isBuy = g.action === 'BUY';
         markers.push({
-          time: date,
+          time: key,
           position: isBuy ? 'belowBar' : 'aboveBar',
           color: isBuy ? '#3ddc97' : '#f8615a',
           shape: isBuy ? 'arrowUp' : 'arrowDown',
-          text: ev.symbol || '',
+          text: g.symbol || '',
         });
       });
     }
@@ -775,7 +817,21 @@ function initChart(hist, events) {
   wireSeg('metricSeg', 'metric');
   wireSeg('typeSeg', 'type');
   wireSeg('tfSeg', 'tf');
-  wireSeg('rangeSeg', 'range');
+
+  // Nhãn thời gian hiển thị trong tooltip: theo Ngày thì hiện đúng ngày,
+  // theo Tuần/Tháng thì hiện cả khoảng/kỳ để không gây hiểu nhầm là chỉ 1 ngày.
+  function periodLabel(key, tf) {
+    if (tf === 'D') return fmtDate(key);
+    if (tf === 'M') {
+      const [y, m] = key.split('-');
+      return `Tháng ${m}/${y}`;
+    }
+    const start = new Date(key + 'T00:00:00');
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    const f = d => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+    return `Tuần ${f(start)} - ${f(end)}/${end.getFullYear()}`;
+  }
 
   // ── Crosshair: hiện giá trị tại thời điểm đang trỏ ──
   chart.subscribeCrosshairMove(param => {
@@ -795,8 +851,6 @@ function initChart(hist, events) {
       const dir = d.close >= d.open ? 'tt-up' : 'tt-down';
       rows = `
         <div class="tt-row"><span class="tt-lbl">Mở</span><span>${fmt(d.open)}</span></div>
-        <div class="tt-row"><span class="tt-lbl">Cao</span><span>${fmt(d.high)}</span></div>
-        <div class="tt-row"><span class="tt-lbl">Thấp</span><span>${fmt(d.low)}</span></div>
         <div class="tt-row"><span class="tt-lbl">Đóng</span><span class="${dir}">${fmt(d.close)}</span></div>`;
     } else {
       rows = `<div class="tt-row"><span class="tt-lbl">Danh mục</span><span>${fmt(d.value)}</span></div>`;
@@ -806,19 +860,17 @@ function initChart(hist, events) {
       }
     }
 
-    // Nếu ngày đang hover có giao dịch BUY/SELL, thêm dòng mã CP/loại lệnh/giá trị
-    if (state.tf === 'D') {
-      const dayEvents = eventsByDate.get(timeToKey(param.time));
-      if (dayEvents && dayEvents.length) {
-        dayEvents.forEach(ev => {
-          const dir = ev.action === 'BUY' ? 'tt-up' : 'tt-down';
-          const actionLabel = ev.action === 'BUY' ? 'Mua' : 'Bán';
-          rows += `<div class="tt-row"><span class="tt-lbl">${ev.symbol} · ${actionLabel}</span><span class="${dir}">${fmtVND(ev.value)}</span></div>`;
-        });
-      }
+    // Nếu kỳ đang hover có giao dịch BUY/SELL, thêm dòng mã CP + khối lượng + giá trị
+    const periodEvents = currentEventsByPeriod.get(timeToKey(param.time));
+    if (periodEvents && periodEvents.length) {
+      groupEvents(periodEvents).forEach(g => {
+        const dir = g.action === 'BUY' ? 'tt-up' : 'tt-down';
+        const actionLabel = g.action === 'BUY' ? 'Mua' : 'Bán';
+        rows += `<div class="tt-row"><span class="tt-lbl">${g.symbol} · ${actionLabel} · KL ${fmtNum(g.qty, 0)}</span><span class="${dir}">${fmtVND(g.value)}</span></div>`;
+      });
     }
 
-    tooltip.innerHTML = `<div class="tt-date">${param.time}</div>${rows}`;
+    tooltip.innerHTML = `<div class="tt-date">${periodLabel(timeToKey(param.time), state.tf)}</div>${rows}`;
     tooltip.style.display = 'block';
 
     const cw = container.clientWidth;
