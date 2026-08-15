@@ -2,6 +2,7 @@ requests
 numpy
 pandas
 openpyxl
+scipy
 vnstock
 google-api-python-client
 google-auth

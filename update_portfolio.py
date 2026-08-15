@@ -13,6 +13,7 @@ import requests
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Border, NamedStyle, PatternFill, Side
 from openpyxl.utils import get_column_letter
+from scipy.optimize import brentq, newton
 from vnstock import Vnstock
 
 # ── CẤU HÌNH ─────────────────────────────────────────────────────────────────
@@ -31,6 +32,47 @@ DEFAULT_STOCK_CODES = ["HPG", "TCB", "FPT", "PNJ", "FRT", "MWG", "MBB"]
 
 RISK_FREE_RATE = 0.04
 TRADING_DAYS   = 252
+
+# Map cứng mã CP → ngành, dùng cho Allocation/Position Contribution (mục 4)
+SECTOR_MAP = {
+    "HPG": "Thép", "TCB": "Ngân hàng", "MBB": "Ngân hàng",
+    "FPT": "Công nghệ", "PNJ": "Bán lẻ", "FRT": "Bán lẻ", "MWG": "Bán lẻ",
+}
+
+
+# ── HÀM TIỆN ÍCH DÙNG CHUNG ───────────────────────────────────────────────────
+def safe_num(x):
+    """Trả về float hợp lệ, hoặc None nếu là NaN/Infinity (JSON chuẩn không
+    chấp nhận NaN/Infinity — trình duyệt sẽ báo lỗi parse nếu để lọt vào)."""
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(v):
+        return None
+    return v
+
+
+# ── HÀM XIRR (mục 5) — dùng để tính lãi suất nội bộ trên chuỗi cashflow không
+# đều theo thời gian. Đặt sớm vì không phụ thuộc df_pr, chỉ nhận list (date, amount).
+def xirr(cashflows: list) -> float:
+    """cashflows: list các (ngày, số tiền có dấu). Âm = tiền ra khỏi túi NĐT
+    (D, hoặc E0 giả định mua vào đầu kỳ). Dương = tiền về túi NĐT
+    (W, hoặc E1 giả định bán ra cuối kỳ)."""
+    if len(cashflows) < 2:
+        return None
+    d0 = min(d for d, _ in cashflows)
+
+    def npv(rate):
+        return sum(cf / (1 + rate) ** ((d - d0).days / 365) for d, cf in cashflows)
+
+    try:
+        return newton(npv, 0.1, maxiter=100)
+    except (RuntimeError, OverflowError):
+        try:
+            return brentq(npv, -0.9999, 10)
+        except ValueError:
+            return None
 
 
 # ── 1. ĐỌC LỊCH SỬ GIÁ (price_history.csv — chỉ giá thô) ────────────────────
@@ -266,6 +308,32 @@ df_pr["E1"] = (
 )
 
 
+# ── 6b. SỰ KIỆN GIAO DỊCH (BUY/SELL) CHO MARKER + TOOLTIP TRÊN CHART (mục 1) ─
+# "Giá trị" của mỗi transaction KHÔNG tính qty×giá đóng cửa, mà lấy từ
+# cashflows.csv theo ngày khớp (D↔BUY, W↔SELL) — vì danh mục không giữ tiền
+# mặt nên D/W chính là số tiền dùng mua/bán CP hôm đó. Nếu 1 ngày có nhiều
+# dòng D hoặc nhiều dòng W (đã cộng dồn trong biến `wd` ở mục 5), dùng tổng đó.
+def build_transaction_events(transactions: pd.DataFrame, wd: pd.DataFrame) -> list:
+    events = []
+    tx_stock = transactions[transactions["symbol"] != "MARGIN"]
+    for _, row in tx_stock.iterrows():
+        date_str = row["date"].strftime("%d/%m/%Y")
+        action   = row["action"]  # BUY hoặc SELL
+        col      = "D" if action == "BUY" else "W"
+        value    = float(wd.loc[date_str, col]) if (date_str in wd.index and col in wd.columns) else 0.0
+        events.append({
+            "date":     row["date"].strftime("%Y-%m-%d"),
+            "symbol":   row["symbol"],
+            "action":   action,
+            "quantity": safe_num(row["quantity"]),
+            "value":    safe_num(value),
+        })
+    return events
+
+
+transaction_events = build_transaction_events(transactions, wd)
+
+
 # ── 7. TÍNH CÁC CHỈ SỐ HIỆU SUẤT ─────────────────────────────────────────────
 df_pr["E0"] = df_pr["E1"].shift(-1)
 df_pr.loc[df_pr.index[-1], "E0"] = 0
@@ -301,6 +369,218 @@ for _, idx in df_pr.groupby("YR").groups.items():
     peaks = cr1_slice.cummax()
     max_dd = ((cr1_slice - peaks) / peaks).min()
     df_pr.loc[idx, "MaxDrawdown"] = max_dd
+
+
+# ── 7c. SHARPE & MAX DRAWDOWN — BẢN TỔNG LỊCH SỬ (mục 3) ─────────────────────
+# Không group theo năm — chạy trên toàn bộ chuỗi DR/CR+1. Sharpe tổng dùng CAGR
+# (không dùng CR thô) vì CR trải nhiều năm sẽ méo tỷ lệ so với rf (lãi suất/năm).
+N_total   = len(df_pr)
+cr_latest = df_pr.loc[df_pr.index[0], "CR"]  # index 0 = ngày mới nhất (df_pr sort giảm dần)
+
+if N_total and (1 + cr_latest) > 0:
+    cagr_total = (1 + cr_latest) ** (TRADING_DAYS / N_total) - 1
+else:
+    cagr_total = np.nan  # (1+CR) <= 0 sẽ ra số phức với số mũ lẻ — coi như không xác định
+
+std_total = df_pr["DR"].std(ddof=0)
+sharpe_total = (
+    (cagr_total - RISK_FREE_RATE) / (std_total * np.sqrt(TRADING_DAYS))
+    if std_total and pd.notna(cagr_total) else np.nan
+)
+
+cr1_all   = pd.to_numeric(df_pr["CR+1"], errors="coerce")[::-1]  # đảo về thời gian tăng dần
+peaks_all = cr1_all.cummax()
+max_dd_total = ((cr1_all - peaks_all) / peaks_all).min()
+
+df_pr["Sharpe_Total"]      = sharpe_total
+df_pr["MaxDrawdown_Total"] = max_dd_total
+
+
+# ── 7d. RISK/MARKET METRICS: BETA, ALPHA, VOLATILITY, CORRELATION (mục 2) ───
+rf_daily = RISK_FREE_RATE / TRADING_DAYS
+
+
+def _risk_metrics(dr: pd.Series, dr_vni: pd.Series) -> dict:
+    """Beta/Alpha/Volatility/Correlation trên 1 lát cắt DR/DR(VNI). Alpha và
+    Volatility luôn annualize bằng TRADING_DAYS (252) — kể cả khi lát cắt là
+    bản Tổng nhiều năm hay 1 năm có số ngày lẻ (chốt thiết kế: không đổi 252)."""
+    dr     = pd.to_numeric(dr, errors="coerce")
+    dr_vni = pd.to_numeric(dr_vni, errors="coerce")
+    dr_mean, vni_mean = dr.mean(), dr_vni.mean()
+
+    cov     = ((dr - dr_mean) * (dr_vni - vni_mean)).mean()  # Cov quần thể (ddof=0)
+    var_vni = ((dr_vni - vni_mean) ** 2).mean()               # Var quần thể, đồng bộ STDEVP
+    beta    = cov / var_vni if var_vni else np.nan
+
+    alpha_daily = dr_mean - (rf_daily + beta * (vni_mean - rf_daily)) if pd.notna(beta) else np.nan
+    alpha       = alpha_daily * TRADING_DAYS if pd.notna(alpha_daily) else np.nan
+
+    volatility  = dr.std(ddof=0) * np.sqrt(TRADING_DAYS)
+    correlation = dr.corr(dr_vni)
+
+    return {"beta": beta, "alpha": alpha, "volatility": volatility, "correlation": correlation}
+
+
+df_pr["Beta"]        = np.nan
+df_pr["Alpha"]       = np.nan
+df_pr["Volatility"]  = np.nan
+df_pr["Correlation"] = np.nan
+
+for _, idx in df_pr.groupby("Year_tmp").groups.items():
+    idx = sorted(idx)
+    m = _risk_metrics(df_pr.loc[idx, "DR"], df_pr.loc[idx, "DR(VNI)"])
+    df_pr.loc[idx, "Beta"]        = m["beta"]
+    df_pr.loc[idx, "Alpha"]       = m["alpha"]
+    df_pr.loc[idx, "Volatility"]  = m["volatility"]
+    df_pr.loc[idx, "Correlation"] = m["correlation"]
+
+risk_total = _risk_metrics(df_pr["DR"], df_pr["DR(VNI)"])
+df_pr["Beta_Total"]        = risk_total["beta"]
+df_pr["Alpha_Total"]       = risk_total["alpha"]
+df_pr["Volatility_Total"]  = risk_total["volatility"]
+df_pr["Correlation_Total"] = risk_total["correlation"]
+
+
+# ── 7e. XIRR (mục 5) — lãi suất nội bộ trên chuỗi cashflow thật (D/W) ────────
+# Quy ước dấu: D = âm (tiền ra mua CP), W = dương (tiền về từ bán CP) — khớp mục 1,
+# vì danh mục không giữ tiền mặt nên D/W trong cashflows.csv chính là dòng tiền thật.
+def _parsed_cashflows(cashflows_df: pd.DataFrame) -> list:
+    parsed = []
+    for _, row in cashflows_df.iterrows():
+        try:
+            d = datetime.strptime(str(row["date"]).strip(), "%d/%m/%Y").date()
+        except ValueError:
+            continue
+        try:
+            amt = float(row["value"])
+        except (TypeError, ValueError):
+            continue
+        amt = -amt if str(row["type"]).strip().upper() == "D" else amt
+        parsed.append((d, amt))
+    return parsed
+
+
+_cf_parsed = _parsed_cashflows(cashflows)
+
+# XIRR tổng: toàn bộ D/W (cashflows.csv) + 1 dòng cuối = E1 hiện tại (dương), ngày mới nhất
+_latest_idx  = df_pr.index[0]
+_latest_date = df_pr.loc[_latest_idx, "date"].date()
+_latest_e1   = float(df_pr.loc[_latest_idx, "E1"])
+
+try:
+    xirr_total = xirr(_cf_parsed + [(_latest_date, _latest_e1)])
+except Exception:
+    xirr_total = None
+
+# XIRR theo năm: E0 đầu năm (âm, giá trị E1 tại ngày giao dịch đầu tiên của năm) +
+# D/W phát sinh trong năm (nguyên dấu, không double-count với E0/E1 vì đó chỉ là
+# mốc định giá) + E1 cuối năm (dương, giá trị E1 tại ngày giao dịch cuối năm).
+df_pr["XIRR_Year"] = np.nan
+for year, idx in df_pr.groupby("Year_tmp").groups.items():
+    idx = sorted(idx)
+    start_idx, end_idx = idx[-1], idx[0]  # df_pr giảm dần theo ngày: idx[-1]=sớm nhất, idx[0]=muộn nhất trong năm
+    e0_date  = df_pr.loc[start_idx, "date"].date()
+    e0_value = float(df_pr.loc[start_idx, "E1"])
+    e1_date  = df_pr.loc[end_idx, "date"].date()
+    e1_value = float(df_pr.loc[end_idx, "E1"])
+
+    year_cfs = [(d, amt) for d, amt in _cf_parsed if d.year == year]
+    cfs = [(e0_date, -e0_value)] + year_cfs + [(e1_date, e1_value)]
+
+    try:
+        xirr_year = xirr(cfs)
+    except Exception:
+        xirr_year = None
+    df_pr.loc[idx, "XIRR_Year"] = xirr_year
+
+
+# ── 7f. ALLOCATION + POSITION CONTRIBUTION (mục 4) — chỉ tính ngày mới nhất ──
+def compute_positions(df_pr: pd.DataFrame, holdings: pd.DataFrame, transactions: pd.DataFrame) -> dict:
+    if df_pr.empty:
+        return {"as_of_date": None, "items": []}
+
+    latest_idx  = df_pr.index[0]  # df_pr sắp xếp giảm dần theo ngày → dòng đầu = mới nhất
+    latest_date = df_pr.loc[latest_idx, "date"]
+    year        = latest_date.year
+
+    year_rows = df_pr[df_pr["Year_tmp"] == year]
+    year_start_idx = year_rows["date"].idxmin() if not year_rows.empty else None
+
+    def price_on(symbol, dt):
+        """Giá đóng cửa của `symbol` đúng ngày `dt` (khớp theo price_history)."""
+        if dt is None or pd.isna(dt):
+            return None
+        rows = df_pr.loc[df_pr["date"] == dt, symbol]
+        if rows.empty:
+            return None
+        v = rows.iloc[0]
+        return float(v) if pd.notna(v) else None
+
+    # Bước 1: qty/giá/giá trị từng mã đang có qty > 0 tại ngày mới nhất
+    raw_positions = []
+    total_value = 0.0
+    for sym in DEFAULT_STOCK_CODES:
+        col = SYMBOL_TO_COL[sym]
+        qty = float(holdings.loc[latest_idx, col])
+        if qty <= 0:
+            continue
+        price = float(df_pr.loc[latest_idx, sym])
+        value = qty * price
+        total_value += value
+        raw_positions.append({"symbol": sym, "col": col, "qty": qty, "price": price, "value": value})
+
+    # Bước 2: weight + return_year/return_total + contribution
+    items = []
+    for p in raw_positions:
+        sym, col, qty, price, value = p["symbol"], p["col"], p["qty"], p["price"], p["value"]
+        weight = value / total_value if total_value else None
+
+        # return_year: giá mới nhất / giá ngày giao dịch đầu tiên của năm hiện tại - 1.
+        # Nếu mã mới mua trong năm (chưa nắm giữ tại ngày đầu năm) thì dùng ngày BUY
+        # đầu tiên của mã đó trong năm thay cho đầu năm.
+        held_at_year_start = year_start_idx is not None and holdings.loc[year_start_idx, col] > 0
+        if held_at_year_start:
+            start_price_year = price_on(sym, df_pr.loc[year_start_idx, "date"])
+        else:
+            buys_this_year = transactions[
+                (transactions["symbol"] == sym) & (transactions["action"] == "BUY") &
+                (transactions["date"].dt.year == year)
+            ]
+            if not buys_this_year.empty:
+                start_price_year = price_on(sym, buys_this_year["date"].min())
+            elif year_start_idx is not None:
+                start_price_year = price_on(sym, df_pr.loc[year_start_idx, "date"])
+            else:
+                start_price_year = None
+        return_year = (price / start_price_year - 1) if start_price_year else None
+
+        # return_total: giá mới nhất / giá tại ngày BUY đầu tiên (toàn bộ lịch sử, từ
+        # transactions.csv, KHÔNG phải từ đầu price_history) - 1.
+        buys_all = transactions[(transactions["symbol"] == sym) & (transactions["action"] == "BUY")]
+        first_buy_total = buys_all["date"].min() if not buys_all.empty else None
+        start_price_total = price_on(sym, first_buy_total) if first_buy_total is not None else None
+        return_total = (price / start_price_total - 1) if start_price_total else None
+
+        contribution_year  = weight * return_year  if (weight is not None and return_year  is not None) else None
+        contribution_total = weight * return_total if (weight is not None and return_total is not None) else None
+
+        items.append({
+            "symbol": sym,
+            "sector": SECTOR_MAP.get(sym),
+            "qty":    safe_num(qty),
+            "price":  safe_num(price),
+            "value":  safe_num(value),
+            "weight": safe_num(weight),
+            "return_year":        safe_num(return_year),
+            "return_total":       safe_num(return_total),
+            "contribution_year":  safe_num(contribution_year),
+            "contribution_total": safe_num(contribution_total),
+        })
+
+    return {"as_of_date": latest_date.strftime("%Y-%m-%d"), "items": items}
+
+
+positions_data = compute_positions(df_pr, holdings, transactions)
 
 
 # ── 8. XUẤT portfolio_history.csv (toàn bộ dữ liệu đã tính) ─────────────────
@@ -486,19 +766,7 @@ print(f"✅ Đã lưu: {OUTPUT_FILE}")
 
 
 # ── 12. XUẤT JSON CHO WEB DASHBOARD ──────────────────────────────────────────
-def safe_num(x):
-    """Trả về float hợp lệ, hoặc None nếu là NaN/Infinity (JSON chuẩn không
-    chấp nhận NaN/Infinity — trình duyệt sẽ báo lỗi parse nếu để lọt vào)."""
-    try:
-        v = float(x)
-    except (TypeError, ValueError):
-        return None
-    if not np.isfinite(v):
-        return None
-    return v
-
-
-def export_json(df: pd.DataFrame, path: Path) -> None:
+def export_json(df: pd.DataFrame, path: Path, events: list = None, positions: dict = None) -> None:
     records = df.copy()
     records["date"] = pd.to_datetime(records["date"], format="%d/%m/%Y")
     records = records.sort_values("date")
@@ -508,6 +776,8 @@ def export_json(df: pd.DataFrame, path: Path) -> None:
         "date", "HPG", "TCB", "FPT", "PNJ", "FRT", "MWG", "MBB", "VNINDEX",
         "E1", "W", "E0", "D", "DR", "DR(VNI)", "CR", "CR(VNI)",
         "MR", "YR", "YR(VNI)", "Sharpe", "MaxDrawdown",
+        "Sharpe_Total", "MaxDrawdown_Total",
+        "Beta", "Alpha", "Volatility", "Correlation", "XIRR_Year",
     ] if c in records.columns]
 
     history = []
@@ -527,13 +797,25 @@ def export_json(df: pd.DataFrame, path: Path) -> None:
         "cumulative_return_vni": safe_num(latest.get("CR(VNI)")),
         "sharpe_ratio": safe_num(latest.get("Sharpe")),
         "max_drawdown": safe_num(latest.get("MaxDrawdown")),
+        "sharpe_total": safe_num(latest.get("Sharpe_Total")),
+        "max_drawdown_total": safe_num(latest.get("MaxDrawdown_Total")),
+        "beta_total": safe_num(risk_total.get("beta")),
+        "alpha_total": safe_num(risk_total.get("alpha")),
+        "volatility_total": safe_num(risk_total.get("volatility")),
+        "correlation_total": safe_num(risk_total.get("correlation")),
+        "xirr_total": safe_num(xirr_total),
     }
+
+    payload = {"summary": summary, "history": history}
+    if events is not None:
+        payload["events"] = events
+    if positions is not None:
+        payload["positions"] = positions
 
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
-        json.dump({"summary": summary, "history": history}, f,
-                   ensure_ascii=False, indent=2, allow_nan=False)
+        json.dump(payload, f, ensure_ascii=False, indent=2, allow_nan=False)
     print(f"✅ Đã xuất: {path}")
 
 
-export_json(df_pr, JSON_FILE)
+export_json(df_pr, JSON_FILE, events=transaction_events, positions=positions_data)
