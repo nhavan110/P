@@ -329,26 +329,65 @@ df_pr["E1"] = (
 )
 
 
-# ── 6b. SỰ KIỆN GIAO DỊCH (BUY/SELL) CHO MARKER + TOOLTIP TRÊN CHART (mục 1) ─
-# "Giá trị" của mỗi transaction KHÔNG tính qty×giá đóng cửa, mà lấy từ
-# cashflows.csv theo ngày khớp (D↔BUY, W↔SELL) — vì danh mục không giữ tiền
-# mặt nên D/W chính là số tiền dùng mua/bán CP hôm đó. Nếu 1 ngày có nhiều
-# dòng D hoặc nhiều dòng W (đã cộng dồn trong biến `wd` ở mục 5), dùng tổng đó.
+# ── 6b. SỰ KIỆN GIAO DỊCH GỘP THEO NGÀY CHO MARKER + TOOLTIP TRÊN CHART (mục 1) ─
+# Gộp mọi giao dịch (BUY/SELL cổ phiếu + thay đổi margin) xảy ra CÙNG 1 NGÀY
+# thành 1 event/ngày, gồm:
+#   - stocks : {symbol: delta_qty}  — dấu +/- theo BUY/SELL, đã cộng dồn nếu
+#              cùng mã có nhiều dòng trong ngày
+#   - cash   : {D: ..., W: ...}     — lấy từ cashflows.csv đúng ngày đó (không
+#              phải qty×giá đóng cửa), cộng dồn nếu 1 ngày có nhiều dòng D/W
+#   - margin_delta : THAY ĐỔI số dư margin so với trước đó (delta), KHÔNG phải
+#              số dư tuyệt đối ghi trong transactions.csv (vì dòng MARGIN/SET
+#              ghi số dư mới, không phải số tiền vay/trả thêm)
+#
+# Ngày nào chỉ có thay đổi số lượng CP mà KHÔNG có cashflow VÀ KHÔNG có thay
+# đổi margin đi kèm => đó là chia tách CP / trả cổ tức bằng CP (không phải
+# giao dịch mua/bán thực), nên KHÔNG đưa vào events để tránh gây nhiễu
+# marker/tooltip trên chart.
 def build_transaction_events(transactions: pd.DataFrame, wd: pd.DataFrame) -> list:
-    events = []
-    tx_stock = transactions[transactions["symbol"] != "MARGIN"]
-    for _, row in tx_stock.iterrows():
+    by_date = {}  # date_str (dd/mm/yyyy) -> {"stocks": {...}, "margin_delta": float}
+    running_margin = 0.0
+
+    for _, row in transactions.iterrows():
         date_str = row["date"].strftime("%d/%m/%Y")
-        action   = row["action"]  # BUY hoặc SELL
-        col      = "D" if action == "BUY" else "W"
-        value    = float(wd.loc[date_str, col]) if (date_str in wd.index and col in wd.columns) else 0.0
+        slot = by_date.setdefault(date_str, {"stocks": {}, "margin_delta": 0.0})
+
+        if row["symbol"] == "MARGIN":
+            new_margin = float(row["quantity"])
+            slot["margin_delta"] += new_margin - running_margin
+            running_margin = new_margin
+        else:
+            delta = row["quantity"] if row["action"] == "BUY" else -row["quantity"]
+            slot["stocks"][row["symbol"]] = slot["stocks"].get(row["symbol"], 0.0) + float(delta)
+
+    events = []
+    for date_str, slot in by_date.items():
+        d_val = float(wd.loc[date_str, "D"]) if (date_str in wd.index and "D" in wd.columns) else 0.0
+        w_val = float(wd.loc[date_str, "W"]) if (date_str in wd.index and "W" in wd.columns) else 0.0
+        stocks = {sym: qty for sym, qty in slot["stocks"].items() if qty != 0}
+        margin_delta = slot["margin_delta"]
+
+        has_stock_change = len(stocks) > 0
+        has_cash = (d_val != 0) or (w_val != 0)
+        has_margin_change = margin_delta != 0
+
+        if not has_stock_change and not has_cash and not has_margin_change:
+            continue
+        # Chia tách CP / cổ tức bằng CP: CP đổi nhưng không có cashflow lẫn
+        # thay đổi margin đi kèm -> bỏ qua.
+        if has_stock_change and not has_cash and not has_margin_change:
+            continue
+
+        dt = datetime.strptime(date_str, "%d/%m/%Y")
         events.append({
-            "date":     row["date"].strftime("%Y-%m-%d"),
-            "symbol":   row["symbol"],
-            "action":   action,
-            "quantity": safe_num(row["quantity"]),
-            "value":    safe_num(value),
+            "date":         dt.strftime("%Y-%m-%d"),
+            "stocks":       {sym: safe_num(qty) for sym, qty in stocks.items()},
+            "cash_in":      safe_num(d_val) if d_val else 0.0,
+            "cash_out":     safe_num(w_val) if w_val else 0.0,
+            "margin_delta": safe_num(margin_delta),
         })
+
+    events.sort(key=lambda e: e["date"])
     return events
 
 
