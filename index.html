@@ -166,8 +166,8 @@
   }
   @media (min-width:900px){
     #page-table{
-      max-width:1300px; width:92vw;
-      margin-left:calc(50% - 46vw); margin-right:calc(50% - 46vw);
+      max-width:1600px; width:97vw;
+      margin-left:calc(50% - 48.5vw); margin-right:calc(50% - 48.5vw);
     }
   }
   .table-title{
@@ -176,24 +176,31 @@
     display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;
   }
   .table-hint{font-size:10px; color:var(--muted); text-transform:none; letter-spacing:0;}
+  /* Bảng chiếm trọn chiều rộng khung (đã canh giữa màn hình ở #page-table) và
+     dùng table-layout:fixed để 19 cột dữ liệu tự chia đều phần còn lại sau cột
+     ngày, đảm bảo không bao giờ tràn ngang phải cuộn — số/chữ tự xuống dòng
+     trong ô thay vì bị cắt. Font/khoảng cách ô được thu nhỏ để vừa nhiều cột. */
   .table-scroll{
-    overflow:auto; max-height:560px; border:1px solid var(--panel-border); border-radius:10px;
+    overflow-y:auto; overflow-x:hidden; max-height:560px;
+    border:1px solid var(--panel-border); border-radius:10px;
   }
   table.dtable{
-    border-collapse:collapse; font-size:11px; white-space:nowrap; width:100%;
+    table-layout:fixed; border-collapse:collapse; width:100%;
+    font-size:clamp(8.5px, 1.05vw, 10.5px);
   }
   table.dtable th, table.dtable td{
-    padding:6px 9px; text-align:right; border-bottom:1px solid var(--panel-border);
+    padding:5px 4px; text-align:right; border-bottom:1px solid var(--panel-border);
     border-right:1px solid var(--panel-border);
+    white-space:normal; overflow-wrap:anywhere; word-break:break-word; line-height:1.3;
   }
   table.dtable th{
     position:sticky; top:0; z-index:2;
     background:#161d25; color:var(--text); font-weight:700; text-align:right;
-    font-family:'Space Grotesk', sans-serif; font-size:10px;
+    font-family:'Space Grotesk', sans-serif; font-size:clamp(8px, 0.95vw, 9.5px);
   }
   table.dtable td.dt-date, table.dtable th.dt-date{
     text-align:left; position:sticky; left:0; z-index:1;
-    background:#0d1218; min-width:64px;
+    background:#0d1218; width:58px;
   }
   table.dtable th.dt-date{ z-index:3; }
   table.dtable td.dt-date{ color:var(--text); font-weight:500; }
@@ -380,7 +387,7 @@ function render(json) {
     <div class="table-panel">
       <div class="table-title">
         <span>Bảng dữ liệu chi tiết (${hist.length} phiên)</span>
-        <span class="table-hint">Cuộn để xem thêm · ô giống nhau theo tháng/năm được gộp</span>
+        <span class="table-hint">Cuộn dọc để xem thêm · ô giống nhau theo tháng/năm được gộp</span>
       </div>
       <div class="table-scroll" id="dataTableWrap"></div>
     </div>
@@ -532,7 +539,7 @@ function riskMetricsForYear(hist, year) {
   }
   if (!row) return null;
   return {
-    beta: row.Beta, alpha: row.Alpha, volatility: row.Volatility,
+    return_: row.YR, beta: row.Beta, alpha: row.Alpha, volatility: row.Volatility,
     correlation: row.Correlation, sharpe: row.Sharpe,
     maxdrawdown: row.MaxDrawdown, xirr: row.XIRR_Year,
   };
@@ -540,6 +547,8 @@ function riskMetricsForYear(hist, year) {
 
 function riskMetricsTotal(s) {
   return {
+    // Tất cả: lấy CR mới nhất (đã là lợi nhuận tích luỹ tính đến hiện tại).
+    return_: s.cumulative_return,
     beta: s.beta_total, alpha: s.alpha_total, volatility: s.volatility_total,
     correlation: s.correlation_total, sharpe: s.sharpe_total,
     maxdrawdown: s.max_drawdown_total, xirr: s.xirr_total,
@@ -551,6 +560,10 @@ function renderRiskGrid(m) {
   if (!grid) return;
   m = m || {};
   grid.innerHTML = `
+    <div class="stat">
+      <div class="lbl">Lợi nhuận</div>
+      <div class="val ${(m.return_ ?? 0) >= 0 ? 'pos' : 'neg'}">${m.return_ != null ? fmtPct(m.return_) : '—'}</div>
+    </div>
     <div class="stat">
       <div class="lbl">Beta</div>
       <div class="val">${m.beta != null ? fmtNum2(m.beta) : '—'}</div>
@@ -605,15 +618,14 @@ function wireRiskPanel(s, hist) {
 function initChart(hist, events) {
   if (typeof LightweightCharts === 'undefined' || !hist.length) return;
 
-  // 0. Map ngày → sự kiện BUY/SELL (dùng cho marker trên chart + tooltip)
-  //    Bỏ qua các sự kiện có giá trị cashflow = 0: đây là chia tách/gộp cổ phiếu,
-  //    mua lại cổ phiếu quỹ,... không phải giao dịch mua/bán thực nên không gắn icon.
+  // 0. Map ngày → sự kiện (gộp sẵn theo ngày ở backend: BUY/SELL CP + thay đổi
+  //    margin). Backend đã tự lọc bỏ các ngày chỉ chia tách/trả cổ tức bằng CP
+  //    (đổi số lượng CP nhưng không có cashflow lẫn thay đổi margin đi kèm),
+  //    nên ở đây chỉ cần dùng thẳng danh sách events.
   const eventsByDate = new Map();
   (events || []).forEach(ev => {
     if (!ev || !ev.date) return;
-    if (!ev.value) return;
-    if (!eventsByDate.has(ev.date)) eventsByDate.set(ev.date, []);
-    eventsByDate.get(ev.date).push(ev);
+    eventsByDate.set(ev.date, ev);
   });
   function timeToKey(t) {
     if (typeof t === 'string') return t;
@@ -710,15 +722,22 @@ function initChart(hist, events) {
     return aggregate(dailyVniOHLC, state.tf);
   }
 
-  // Gộp sự kiện BUY/SELL theo cùng đơn vị thời gian đang hiển thị (Ngày/Tuần/Tháng)
-  // để mỗi nến tuần/tháng vẫn hiện đủ icon mua/bán diễn ra trong kỳ đó.
+  // Gộp sự kiện theo cùng đơn vị thời gian đang hiển thị (Ngày/Tuần/Tháng) để
+  // mỗi nến tuần/tháng vẫn hiện đủ thay đổi CP/cashflow/margin diễn ra trong
+  // kỳ đó (cộng dồn qty theo mã, cộng dồn cash_in/cash_out/margin_delta).
   function eventsGroupedByTf(tf) {
     if (tf === 'D') return eventsByDate;
     const map = new Map();
-    for (const [date, evs] of eventsByDate) {
+    for (const [date, ev] of eventsByDate) {
       const key = periodKey(date, tf);
-      if (!map.has(key)) map.set(key, []);
-      map.get(key).push(...evs);
+      if (!map.has(key)) map.set(key, { date: key, stocks: {}, cash_in: 0, cash_out: 0, margin_delta: 0 });
+      const g = map.get(key);
+      for (const [sym, qty] of Object.entries(ev.stocks || {})) {
+        g.stocks[sym] = (g.stocks[sym] || 0) + qty;
+      }
+      g.cash_in  += ev.cash_in  || 0;
+      g.cash_out += ev.cash_out || 0;
+      g.margin_delta += ev.margin_delta || 0;
     }
     return map;
   }
@@ -758,22 +777,10 @@ function initChart(hist, events) {
     chart.timeScale().fitContent();
   }
 
-  // Gộp danh sách event (cùng mã + cùng loại lệnh trong 1 kỳ hiển thị) thành 1 dòng
-  // duy nhất, cộng dồn khối lượng + giá trị, để tránh chồng nhiều icon/dòng trùng mã.
-  function groupEvents(evs) {
-    const map = new Map();
-    evs.forEach(ev => {
-      const key = ev.symbol + '|' + ev.action;
-      if (!map.has(key)) map.set(key, { symbol: ev.symbol, action: ev.action, qty: 0, value: 0 });
-      const g = map.get(key);
-      g.qty += ev.quantity || 0;
-      g.value += ev.value || 0;
-    });
-    return [...map.values()];
-  }
-
-  // ── Marker BUY/SELL trên chart: hiện ở mọi khung Ngày/Tuần/Tháng,
-  //    gộp theo kỳ đang xem để không bị lệch ngày ──
+  // ── Marker mua/bán CP trên chart: hiện ở mọi khung Ngày/Tuần/Tháng,
+  //    gộp theo kỳ đang xem để không bị lệch ngày. Dấu qty dương = mua
+  //    (arrowUp), âm = bán (arrowDown). Thay đổi margin không có marker
+  //    riêng trên chart, chỉ hiện trong tooltip. ──
   function updateMarkers() {
     const activeSeries = state.type === 'candle' ? candleSeries : lineSeries;
     const otherSeries = state.type === 'candle' ? lineSeries : candleSeries;
@@ -785,16 +792,17 @@ function initChart(hist, events) {
     }
     const validTimes = new Set(lastRenderedTimes);
     const markers = [];
-    for (const [key, evs] of currentEventsByPeriod) {
+    for (const [key, ev] of currentEventsByPeriod) {
       if (!validTimes.has(key)) continue;
-      groupEvents(evs).forEach(g => {
-        const isBuy = g.action === 'BUY';
+      Object.entries(ev.stocks || {}).forEach(([symbol, qty]) => {
+        if (!qty) return;
+        const isBuy = qty > 0;
         markers.push({
           time: key,
           position: isBuy ? 'belowBar' : 'aboveBar',
           color: isBuy ? '#3ddc97' : '#f8615a',
           shape: isBuy ? 'arrowUp' : 'arrowDown',
-          text: g.symbol || '',
+          text: symbol || '',
         });
       });
     }
@@ -860,14 +868,26 @@ function initChart(hist, events) {
       }
     }
 
-    // Nếu kỳ đang hover có giao dịch BUY/SELL, thêm dòng mã CP + khối lượng + giá trị
-    const periodEvents = currentEventsByPeriod.get(timeToKey(param.time));
-    if (periodEvents && periodEvents.length) {
-      groupEvents(periodEvents).forEach(g => {
-        const dir = g.action === 'BUY' ? 'tt-up' : 'tt-down';
-        const actionLabel = g.action === 'BUY' ? 'Mua' : 'Bán';
-        rows += `<div class="tt-row"><span class="tt-lbl">${g.symbol} · ${actionLabel} · KL ${fmtNum(g.qty, 0)}</span><span class="${dir}">${fmtVND(g.value)}</span></div>`;
+    // Nếu kỳ đang hover có giao dịch (mua/bán CP, nạp/rút tiền, đổi margin),
+    // thêm các dòng tương ứng: mỗi mã CP hiện đổi số lượng (dấu +/-), D/W lấy
+    // từ cashflows, margin hiện THAY ĐỔI (delta) chứ không phải số dư tuyệt đối.
+    const periodEv = currentEventsByPeriod.get(timeToKey(param.time));
+    if (periodEv) {
+      Object.entries(periodEv.stocks || {}).forEach(([symbol, qty]) => {
+        if (!qty) return;
+        const dir = qty > 0 ? 'tt-up' : 'tt-down';
+        rows += `<div class="tt-row"><span class="tt-lbl">${symbol}</span><span class="${dir}">${qty > 0 ? '+' : ''}${fmtNum(qty, 0)}</span></div>`;
       });
+      if (periodEv.cash_in) {
+        rows += `<div class="tt-row"><span class="tt-lbl">D</span><span class="tt-up">+${fmtVND(periodEv.cash_in)}</span></div>`;
+      }
+      if (periodEv.cash_out) {
+        rows += `<div class="tt-row"><span class="tt-lbl">W</span><span class="tt-down">-${fmtVND(periodEv.cash_out)}</span></div>`;
+      }
+      if (periodEv.margin_delta) {
+        const dir = periodEv.margin_delta > 0 ? 'tt-up' : 'tt-down';
+        rows += `<div class="tt-row"><span class="tt-lbl">Margin</span><span class="${dir}">${periodEv.margin_delta > 0 ? '+' : ''}${fmtVND(periodEv.margin_delta)}</span></div>`;
+      }
     }
 
     tooltip.innerHTML = `<div class="tt-date">${periodLabel(timeToKey(param.time), state.tf)}</div>${rows}`;
