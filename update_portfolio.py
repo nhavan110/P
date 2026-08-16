@@ -16,6 +16,27 @@ from openpyxl.utils import get_column_letter
 from scipy.optimize import brentq, newton
 from vnstock import Vnstock
 
+# ── WORKAROUND: bug trong vnstock.core.utils.env.get_hosting_service() ──────
+# Hàm này không có nhánh else, nên khi chạy trên môi trường không phải
+# Colab/Codespace/Replit/Kaggle/HF Spaces (vd: GitHub Actions runner), biến
+# `hosting_service` không được gán -> UnboundLocalError. Lỗi này bị tenacity
+# retry rồi che thành `tenacity.RetryError` khi gọi stock.quote.history().
+# Patch lại hàm để trả về giá trị mặc định an toàn thay vì crash.
+import vnstock.core.utils.env as _vnstock_env
+
+_original_get_hosting_service = _vnstock_env.get_hosting_service
+
+
+def _safe_get_hosting_service():
+    try:
+        result = _original_get_hosting_service()
+    except UnboundLocalError:
+        result = None
+    return result or "Local or Unknown"
+
+
+_vnstock_env.get_hosting_service = _safe_get_hosting_service
+
 # ── CẤU HÌNH ─────────────────────────────────────────────────────────────────
 BASE_DIR     = Path(__file__).resolve().parent
 PRICE_HISTORY_FILE     = BASE_DIR / "data" / "price_history.csv"      # giá thô (input/cache), KHÔNG chứa W/D hay kết quả
