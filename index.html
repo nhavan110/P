@@ -102,25 +102,14 @@
     display:flex; flex-wrap:wrap; gap:8px;
     margin-bottom:12px; padding:0 4px;
   }
-  .seg{
-    display:flex; background:var(--bg); border:1px solid var(--panel-border);
-    border-radius:8px; overflow:hidden;
-  }
-  .seg button{
-    background:transparent; border:none; color:var(--muted);
-    font-family:'JetBrains Mono', monospace; font-size:11px; font-weight:500;
-    padding:6px 11px; cursor:pointer; transition:background .15s, color .15s;
-    border-right:1px solid var(--panel-border);
-    white-space:nowrap;
-  }
-  .seg button:last-child{border-right:none;}
-  .seg button.active{background:var(--mint); color:#04231a; font-weight:700;}
-  .seg button:hover:not(.active){color:var(--text);}
-
+  /* .year-select dùng chung cho mọi dropdown lựa chọn trong trang (khung
+     thời gian biểu đồ, loại biểu đồ, kỳ xem rủi ro...) để đồng nhất giao
+     diện. */
   .year-select{
     background:var(--bg); border:1px solid var(--panel-border); color:var(--text);
     font-family:'JetBrains Mono', monospace; font-size:11px; font-weight:500;
     padding:6px 10px; border-radius:8px; cursor:pointer; outline:none;
+    appearance:auto;
   }
   .year-select:hover{ border-color:var(--mint); }
 
@@ -347,19 +336,22 @@ function render(json) {
         </span>
       </div>
       <div class="chart-controls">
-        <div class="seg" id="metricSeg">
-          <button data-v="value" class="active" type="button">Giá trị (đ)</button>
-          <button data-v="pct" type="button">% Lợi nhuận</button>
-        </div>
-        <div class="seg" id="typeSeg">
-          <button data-v="candle" class="active" type="button">Nến</button>
-          <button data-v="line" type="button">Đường</button>
-        </div>
-        <div class="seg" id="tfSeg">
-          <button data-v="D" class="active" type="button">Ngày</button>
-          <button data-v="W" type="button">Tuần</button>
-          <button data-v="M" type="button">Tháng</button>
-        </div>
+        <select class="year-select" id="metricSeg">
+          <option value="value">Giá trị (đ)</option>
+          <option value="pct">% Lợi nhuận</option>
+        </select>
+        <select class="year-select" id="typeSeg">
+          <option value="candle">Nến</option>
+          <option value="line">Đường</option>
+        </select>
+        <select class="year-select" id="tfSeg">
+          <option value="D">Ngày</option>
+          <option value="W">Tuần</option>
+          <option value="M">Tháng</option>
+          <option value="Q">3 tháng</option>
+          <option value="H">6 tháng</option>
+          <option value="Y">Năm</option>
+        </select>
       </div>
       <div class="chart-wrap">
         <div id="chartContainer"></div>
@@ -744,6 +736,15 @@ function initChart(hist, events) {
     if (tf === 'D') return dateStr;
     const d = new Date(dateStr + 'T00:00:00');
     if (tf === 'M') return dateStr.slice(0, 7) + '-01';
+    if (tf === 'Q') {
+      const qStartMonth = Math.floor(d.getMonth() / 3) * 3; // 0,3,6,9
+      return `${d.getFullYear()}-${String(qStartMonth + 1).padStart(2, '0')}-01`;
+    }
+    if (tf === 'H') {
+      const hStartMonth = d.getMonth() < 6 ? 0 : 6; // 0 hoặc 6
+      return `${d.getFullYear()}-${String(hStartMonth + 1).padStart(2, '0')}-01`;
+    }
+    if (tf === 'Y') return `${d.getFullYear()}-01-01`;
     const dow = (d.getDay() + 6) % 7; // 0 = thứ 2
     const monday = new Date(d);
     monday.setDate(d.getDate() - dow);
@@ -794,26 +795,25 @@ function initChart(hist, events) {
   const lineSeries = chart.addLineSeries({ color: '#3ddc97', lineWidth: 2 });
   const vniSeries = chart.addLineSeries({ color: '#7a8ea3', lineWidth: 1.5 });
 
-  // Khôi phục lựa chọn hiển thị (Giá trị/%, Nến/Đường, Ngày/Tuần/Tháng) từ
+  // Khôi phục lựa chọn hiển thị (Giá trị/%, Nến/Đường, khung thời gian) từ
   // lần truy cập gần nhất; chỉ nhận giá trị hợp lệ, còn lại dùng mặc định.
   const savedChartPrefs = loadPref(PREFS_KEY_CHART) || {};
   const state = {
     metric: ['value', 'pct'].includes(savedChartPrefs.metric) ? savedChartPrefs.metric : 'value',
     type:   ['candle', 'line'].includes(savedChartPrefs.type) ? savedChartPrefs.type : 'candle',
-    tf:     ['D', 'W', 'M'].includes(savedChartPrefs.tf) ? savedChartPrefs.tf : 'D',
+    tf:     ['D', 'W', 'M', 'Q', 'H', 'Y'].includes(savedChartPrefs.tf) ? savedChartPrefs.tf : 'D',
   };
 
-  // Đồng bộ nút "active" trên giao diện cho khớp với state vừa khôi phục
-  // (mặc định HTML luôn tô đậm lựa chọn đầu tiên, cần cập nhật lại nếu
+  // Đồng bộ giá trị đang chọn trên 3 dropdown cho khớp với state vừa khôi
+  // phục (mặc định HTML luôn chọn option đầu tiên, cần cập nhật lại nếu
   // người dùng lần trước đã chọn khác).
-  function syncSegUI(id, value) {
-    const seg = document.getElementById(id);
-    if (!seg) return;
-    seg.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.v === value));
+  function syncSelectUI(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.value = value;
   }
-  syncSegUI('metricSeg', state.metric);
-  syncSegUI('typeSeg', state.type);
-  syncSegUI('tfSeg', state.tf);
+  syncSelectUI('metricSeg', state.metric);
+  syncSelectUI('typeSeg', state.type);
+  syncSelectUI('tfSeg', state.tf);
 
   function currentData() {
     const src = state.metric === 'value' ? dailyOHLC.value : dailyOHLC.pct;
@@ -911,22 +911,19 @@ function initChart(hist, events) {
     activeSeries.setMarkers(markers);
   }
 
-  // ── Điều khiển segment (Giá trị/%, Nến/Đường, Ngày/Tuần/Tháng, khoảng thời gian) ──
-  function wireSeg(id, stateKey) {
-    const seg = document.getElementById(id);
-    seg.addEventListener('click', e => {
-      const btn = e.target.closest('button');
-      if (!btn) return;
-      seg.querySelectorAll('button').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      state[stateKey] = btn.dataset.v;
+  // ── Điều khiển dropdown (Giá trị/%, Nến/Đường, khung thời gian) ──
+  function wireSelect(id, stateKey) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('change', () => {
+      state[stateKey] = el.value;
       savePref(PREFS_KEY_CHART, { metric: state.metric, type: state.type, tf: state.tf });
       rebuild();
     });
   }
-  wireSeg('metricSeg', 'metric');
-  wireSeg('typeSeg', 'type');
-  wireSeg('tfSeg', 'tf');
+  wireSelect('metricSeg', 'metric');
+  wireSelect('typeSeg', 'type');
+  wireSelect('tfSeg', 'tf');
 
   // Nhãn thời gian hiển thị trong tooltip: theo Ngày thì hiện đúng ngày,
   // theo Tuần/Tháng thì hiện cả khoảng/kỳ để không gây hiểu nhầm là chỉ 1 ngày.
@@ -936,6 +933,17 @@ function initChart(hist, events) {
       const [y, m] = key.split('-');
       return `Tháng ${m}/${y}`;
     }
+    if (tf === 'Q') {
+      const [y, m] = key.split('-');
+      const q = Math.floor((parseInt(m, 10) - 1) / 3) + 1;
+      return `Quý ${q}/${y}`;
+    }
+    if (tf === 'H') {
+      const [y, m] = key.split('-');
+      const half = parseInt(m, 10) <= 6 ? 1 : 2;
+      return `Nửa năm ${half}/${y}`;
+    }
+    if (tf === 'Y') return `Năm ${key.slice(0, 4)}`;
     const start = new Date(key + 'T00:00:00');
     const end = new Date(start);
     end.setDate(start.getDate() + 6);
