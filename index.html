@@ -154,21 +154,14 @@
     padding:18px 14px 16px;
     margin-bottom:16px;
   }
-  /* Thoát khỏi giới hạn max-width:760px của .wrap để bảng có nhiều chỗ hơn,
-     tránh cuộn ngang quá nhiều khi đã có nhiều cột.
-     Dùng margin: calc(50% - Nvw) thay vì left/margin-left trộn đơn vị %/vw
-     (bug cũ khiến bảng bị lệch hẳn sang trái trên màn hình rộng, vì % ở "left"
-     tính theo chiều rộng .wrap chứ không phải theo viewport như "vw"). */
+  /* #page-table nằm ngoài .wrap (là con trực tiếp của <body>, xem cấu trúc
+     HTML) nên containing block của nó là body/viewport, không phải .wrap bị
+     giới hạn max-width:760px — margin:0 auto vì vậy canh giữa đúng, không
+     cần trộn đơn vị %/vw dễ lỗi như trước. */
   #page-table{
-    max-width:none; width:100vw;
-    margin-left:calc(50% - 50vw); margin-right:calc(50% - 50vw);
-    padding:0 12px;
-  }
-  @media (min-width:900px){
-    #page-table{
-      max-width:1600px; width:97vw;
-      margin-left:calc(50% - 48.5vw); margin-right:calc(50% - 48.5vw);
-    }
+    max-width:1440px; width:100%;
+    margin:0 auto;
+    padding:0 16px;
   }
   .table-title{
     font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.1em;
@@ -176,31 +169,31 @@
     display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;
   }
   .table-hint{font-size:10px; color:var(--muted); text-transform:none; letter-spacing:0;}
-  /* Bảng chiếm trọn chiều rộng khung (đã canh giữa màn hình ở #page-table) và
-     dùng table-layout:fixed để 19 cột dữ liệu tự chia đều phần còn lại sau cột
-     ngày, đảm bảo không bao giờ tràn ngang phải cuộn — số/chữ tự xuống dòng
-     trong ô thay vì bị cắt. Font/khoảng cách ô được thu nhỏ để vừa nhiều cột. */
+  /* table-layout:auto để mỗi cột tự co theo độ rộng nội dung thực tế của nó
+     (cột ngày rộng vừa đủ để không xuống dòng, các cột số ngắn không bị kéo
+     giãn quá mức). Bảng có min-width nên trên màn hình hẹp sẽ cuộn ngang
+     thay vì bị bóp méo/xuống dòng lung tung. */
   .table-scroll{
-    overflow-y:auto; overflow-x:hidden; max-height:560px;
+    overflow:auto; max-height:560px;
     border:1px solid var(--panel-border); border-radius:10px;
   }
   table.dtable{
-    table-layout:fixed; border-collapse:collapse; width:100%;
-    font-size:clamp(8.5px, 1.05vw, 10.5px);
+    table-layout:auto; border-collapse:collapse; width:100%; min-width:1220px;
+    font-size:11.5px;
   }
   table.dtable th, table.dtable td{
-    padding:5px 4px; text-align:right; border-bottom:1px solid var(--panel-border);
+    padding:7px 9px; text-align:right; border-bottom:1px solid var(--panel-border);
     border-right:1px solid var(--panel-border);
-    white-space:normal; overflow-wrap:anywhere; word-break:break-word; line-height:1.3;
+    white-space:nowrap; line-height:1.3;
   }
   table.dtable th{
     position:sticky; top:0; z-index:2;
     background:#161d25; color:var(--text); font-weight:700; text-align:right;
-    font-family:'Space Grotesk', sans-serif; font-size:clamp(8px, 0.95vw, 9.5px);
+    font-family:'Space Grotesk', sans-serif; font-size:10.5px;
   }
   table.dtable td.dt-date, table.dtable th.dt-date{
     text-align:left; position:sticky; left:0; z-index:1;
-    background:#0d1218; width:58px;
+    background:#0d1218; min-width:92px;
   }
   table.dtable th.dt-date{ z-index:3; }
   table.dtable td.dt-date{ color:var(--text); font-weight:500; }
@@ -269,8 +262,13 @@
     </nav>
 
     <div id="page-overview" class="page active"></div>
-    <div id="page-table" class="page"></div>
+  </div>
 
+  <!-- Nằm ngoài .wrap (chứ không phải bên trong) để có thể rộng hơn 760px và
+       canh giữa đúng theo toàn bộ viewport — xem CSS #page-table ở trên. -->
+  <div id="page-table" class="page"></div>
+
+  <div class="wrap">
     <footer>Tự động cập nhật qua GitHub Actions · dữ liệu từ data/data.json</footer>
   </div>
 
@@ -381,6 +379,8 @@ function render(json) {
       </div>
       <div id="positionsTableWrap"></div>
     </div>
+
+    <div class="table-panel" id="leveragePanel"></div>
   `;
 
   document.getElementById('page-table').innerHTML = `
@@ -396,6 +396,7 @@ function render(json) {
   buildTable(hist);
   initPageTabs();
   buildPositionsTable(pos.items ?? []);
+  buildLeveragePanel(pos.items ?? [], s.portfolio_value ?? 0);
   wireRiskPanel(s, hist);
 
   try {
@@ -499,6 +500,47 @@ function buildTable(hist) {
   }).join('');
 
   wrap.innerHTML = `<table class="dtable">${thead}<tbody>${bodyRows}</tbody></table>`;
+}
+
+// ── ĐÒN BẨY (bảng gọn trên tab Tổng quan) ───────────────────────────────────
+// Không có sẵn field "margin" riêng trong data.json, nhưng có thể suy ra:
+// giá trị thực (gross) của các mã CP đang nắm giữ = tổng value trong positions,
+// còn portfolio_value (E1) là VỐN RÒNG (đã trừ nợ margin). Chênh lệch giữa
+// hai số này chính là dư nợ margin hiện tại.
+function buildLeveragePanel(items, equity) {
+  const panel = document.getElementById('leveragePanel');
+  if (!panel) return;
+  const grossAssets = items.reduce((sum, p) => sum + (p.value ?? 0), 0);
+  const margin = Math.max(0, grossAssets - equity);
+  const leverage = equity > 0 ? grossAssets / equity : null;
+
+  if (!items.length || equity <= 0) {
+    panel.innerHTML = `
+      <div class="table-title"><span>Đòn bẩy</span></div>
+      <div style="padding:4px 4px 2px;color:var(--muted);font-size:12px;">Chưa có dữ liệu.</div>`;
+    return;
+  }
+
+  panel.innerHTML = `
+    <div class="table-title"><span>Đòn bẩy</span></div>
+    <div class="grid lev-grid" style="margin-bottom:0;">
+      <div class="stat">
+        <div class="lbl">Tỷ lệ đòn bẩy</div>
+        <div class="val">${leverage != null ? leverage.toFixed(2) + 'x' : '—'}</div>
+      </div>
+      <div class="stat">
+        <div class="lbl">Dư nợ margin</div>
+        <div class="val ${margin > 0 ? 'neg' : ''}">${fmtVND(margin)}</div>
+      </div>
+      <div class="stat">
+        <div class="lbl">Tổng giá trị tài sản</div>
+        <div class="val">${fmtVND(grossAssets)}</div>
+      </div>
+      <div class="stat">
+        <div class="lbl">Vốn ròng (equity)</div>
+        <div class="val">${fmtVND(equity)}</div>
+      </div>
+    </div>`;
 }
 
 // ── PHÂN BỔ DANH MỤC (bảng gọn trên tab Tổng quan) ──────────────────────────
