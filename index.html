@@ -159,7 +159,7 @@
      giới hạn max-width:760px — margin:0 auto vì vậy canh giữa đúng, không
      cần trộn đơn vị %/vw dễ lỗi như trước. */
   #page-table{
-    max-width:1440px; width:100%;
+    max-width:1600px; width:100%;
     margin:0 auto;
     padding:0 16px;
   }
@@ -169,31 +169,33 @@
     display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;
   }
   .table-hint{font-size:10px; color:var(--muted); text-transform:none; letter-spacing:0;}
-  /* table-layout:auto để mỗi cột tự co theo độ rộng nội dung thực tế của nó
-     (cột ngày rộng vừa đủ để không xuống dòng, các cột số ngắn không bị kéo
-     giãn quá mức). Bảng có min-width nên trên màn hình hẹp sẽ cuộn ngang
-     thay vì bị bóp méo/xuống dòng lung tung. */
+  /* table-layout:fixed + colgroup theo % trọng số (xem TABLE_COLS/buildTable)
+     để bảng LUÔN khớp đúng 100% chiều rộng khung chứa — không bao giờ tràn
+     ra ngoài nên không cần cuộn ngang trên desktop. Cỡ chữ co giãn nhẹ theo
+     bề rộng màn hình để chữ vẫn đọc được khi khung hẹp lại; text-overflow
+     ellipsis chỉ là lưới an toàn cho màn rất hẹp (điện thoại), gần như không
+     xảy ra ở màn hình máy tính. */
   .table-scroll{
-    overflow:auto; max-height:560px;
+    overflow-y:auto; overflow-x:hidden; max-height:560px;
     border:1px solid var(--panel-border); border-radius:10px;
   }
   table.dtable{
-    table-layout:auto; border-collapse:collapse; width:100%; min-width:1220px;
-    font-size:11.5px;
+    table-layout:fixed; border-collapse:collapse; width:100%;
+    font-size:clamp(9.5px, 0.82vw, 12px);
   }
   table.dtable th, table.dtable td{
-    padding:7px 9px; text-align:right; border-bottom:1px solid var(--panel-border);
+    padding:7px 6px; text-align:right; border-bottom:1px solid var(--panel-border);
     border-right:1px solid var(--panel-border);
-    white-space:nowrap; line-height:1.3;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.3;
   }
   table.dtable th{
     position:sticky; top:0; z-index:2;
     background:#161d25; color:var(--text); font-weight:700; text-align:right;
-    font-family:'Space Grotesk', sans-serif; font-size:10.5px;
+    font-family:'Space Grotesk', sans-serif; font-size:clamp(8.5px, 0.75vw, 11px);
   }
   table.dtable td.dt-date, table.dtable th.dt-date{
     text-align:left; position:sticky; left:0; z-index:1;
-    background:#0d1218; min-width:92px;
+    background:#0d1218;
   }
   table.dtable th.dt-date{ z-index:3; }
   table.dtable td.dt-date{ color:var(--text); font-weight:500; }
@@ -417,28 +419,34 @@ function fmtPctPlain(n) {
 }
 
 // ── BẢNG DỮ LIỆU (gộp ô các cột lặp giá trị theo tháng/năm) ─────────────────
+// "w" = độ rộng tương đối của cột, ước theo số ký tự nội dung dài nhất có thể
+// xuất hiện (vd "142.900" ~7 ký tự, "70.270.000" ~10 ký tự...). Dùng để chia
+// % chiều rộng bảng cho từng cột (xem buildTable) thay vì chia đều 1/20 cho
+// tất cả — nhờ vậy cột ngày đủ rộng để không xuống dòng mà các cột số ngắn
+// cũng không bị kéo giãn thừa thãi, và tổng bảng luôn vừa khít khung (không
+// cần cuộn ngang).
 const TABLE_COLS = [
-  { key: 'date',         label: 'date',          cls: '',        fmt: v => fmtDate(v) },
-  { key: 'HPG',          label: 'HPG',           cls: 'g-price',  fmt: v => fmtNum(v, 0) },
-  { key: 'TCB',          label: 'TCB',           cls: 'g-price',  fmt: v => fmtNum(v, 0) },
-  { key: 'FPT',          label: 'FPT',           cls: 'g-price',  fmt: v => fmtNum(v, 0) },
-  { key: 'PNJ',          label: 'PNJ',           cls: 'g-price',  fmt: v => fmtNum(v, 0) },
-  { key: 'FRT',          label: 'FRT',           cls: 'g-cyan',   fmt: v => fmtNum(v, 0) },
-  { key: 'MWG',          label: 'MWG',           cls: 'g-cyan',   fmt: v => fmtNum(v, 0) },
-  { key: 'MBB',          label: 'MBB',           cls: 'g-cyan',   fmt: v => fmtNum(v, 0) },
-  { key: 'VNINDEX',      label: 'VNINDEX',       cls: 'g-vni',    fmt: v => fmtNum(v, 2) },
-  { key: 'E1',           label: 'E1',            cls: 'g-cash',   fmt: v => fmtNum(v, 0) },
-  { key: 'W',            label: 'W',             cls: 'g-cash',   fmt: v => fmtNum(v, 0) },
-  { key: 'E0',           label: 'E0',            cls: 'g-cash',   fmt: v => fmtNum(v, 0) },
-  { key: 'D',            label: 'D',             cls: 'g-cash',   fmt: v => fmtNum(v, 0) },
-  { key: 'DR',           label: 'DR',            cls: 'g-stat',   fmt: v => fmtPct(v) },
-  { key: 'DR(VNI)',      label: 'DR(VNI)',       cls: 'g-stat',   fmt: v => fmtPct(v) },
-  { key: 'CR',           label: 'CR',            cls: 'g-stat',   fmt: v => fmtPct(v) },
-  { key: 'MR',           label: 'MR',            cls: 'g-stat',   fmt: v => fmtPct(v),  merge: true },
-  { key: 'YR',           label: 'YR',            cls: 'g-stat',   fmt: v => fmtPct(v),  merge: true },
-  { key: 'YR(VNI)',      label: 'YR(VNI)',       cls: 'g-stat',   fmt: v => fmtPct(v),  merge: true },
-  { key: 'Sharpe',       label: 'Sharpe ratio',  cls: 'g-stat',   fmt: v => fmtNum(v, 2), merge: true },
-  { key: 'MaxDrawdown',  label: 'Max drawdown',  cls: 'g-stat',   fmt: v => fmtPct(v),  merge: true },
+  { key: 'date',         label: 'date',    title: '',              cls: '',        w: 10, fmt: v => fmtDate(v) },
+  { key: 'HPG',          label: 'HPG',     title: '',              cls: 'g-price',  w: 7,  fmt: v => fmtNum(v, 0) },
+  { key: 'TCB',          label: 'TCB',     title: '',              cls: 'g-price',  w: 7,  fmt: v => fmtNum(v, 0) },
+  { key: 'FPT',          label: 'FPT',     title: '',              cls: 'g-price',  w: 7,  fmt: v => fmtNum(v, 0) },
+  { key: 'PNJ',          label: 'PNJ',     title: '',              cls: 'g-price',  w: 7,  fmt: v => fmtNum(v, 0) },
+  { key: 'FRT',          label: 'FRT',     title: '',              cls: 'g-cyan',   w: 7,  fmt: v => fmtNum(v, 0) },
+  { key: 'MWG',          label: 'MWG',     title: '',              cls: 'g-cyan',   w: 7,  fmt: v => fmtNum(v, 0) },
+  { key: 'MBB',          label: 'MBB',     title: '',              cls: 'g-cyan',   w: 7,  fmt: v => fmtNum(v, 0) },
+  { key: 'VNINDEX',      label: 'VNINDEX', title: '',              cls: 'g-vni',    w: 8,  fmt: v => fmtNum(v, 2) },
+  { key: 'E1',           label: 'E1',      title: '',              cls: 'g-cash',   w: 9,  fmt: v => fmtNum(v, 0) },
+  { key: 'W',            label: 'W',       title: '',              cls: 'g-cash',   w: 9,  fmt: v => fmtNum(v, 0) },
+  { key: 'E0',           label: 'E0',      title: '',              cls: 'g-cash',   w: 9,  fmt: v => fmtNum(v, 0) },
+  { key: 'D',            label: 'D',       title: '',              cls: 'g-cash',   w: 9,  fmt: v => fmtNum(v, 0) },
+  { key: 'DR',           label: 'DR',      title: '',              cls: 'g-stat',   w: 7,  fmt: v => fmtPct(v) },
+  { key: 'DR(VNI)',      label: 'DR(VNI)', title: '',              cls: 'g-stat',   w: 7,  fmt: v => fmtPct(v) },
+  { key: 'CR',           label: 'CR',      title: '',              cls: 'g-stat',   w: 7,  fmt: v => fmtPct(v) },
+  { key: 'MR',           label: 'MR',      title: '',              cls: 'g-stat',   w: 7,  fmt: v => fmtPct(v),  merge: true },
+  { key: 'YR',           label: 'YR',      title: '',              cls: 'g-stat',   w: 7,  fmt: v => fmtPct(v),  merge: true },
+  { key: 'YR(VNI)',      label: 'YR(VNI)', title: '',              cls: 'g-stat',   w: 7,  fmt: v => fmtPct(v),  merge: true },
+  { key: 'Sharpe',       label: 'Sharpe',  title: 'Sharpe ratio',  cls: 'g-stat',   w: 6,  fmt: v => fmtNum(v, 2), merge: true },
+  { key: 'MaxDrawdown',  label: 'MDD',     title: 'Max drawdown',  cls: 'g-stat',   w: 7,  fmt: v => fmtPct(v),  merge: true },
 ];
 
 function fmtNum(n, decimals) {
@@ -481,9 +489,17 @@ function buildTable(hist) {
     if (col.merge) rowSpanMap[col.key] = computeRowSpans(rows, col.key);
   });
 
-  const thead = `<thead><tr>${TABLE_COLS.map(c =>
-    `<th class="${c.key === 'date' ? 'dt-date' : c.cls}">${c.label}</th>`
-  ).join('')}</tr></thead>`;
+  // colgroup: chia % chiều rộng bảng theo trọng số "w" của từng cột (xem
+  // ghi chú tại TABLE_COLS) để bảng luôn vừa khít 100% khung chứa, không
+  // bao giờ cần cuộn ngang trên desktop.
+  const totalW = TABLE_COLS.reduce((sum, c) => sum + c.w, 0);
+  const colgroup = `<colgroup>${TABLE_COLS.map(c =>
+    `<col style="width:${(c.w / totalW * 100).toFixed(3)}%">`
+  ).join('')}</colgroup>`;
+
+  const thead = `<tr>${TABLE_COLS.map(c =>
+    `<th class="${c.key === 'date' ? 'dt-date' : c.cls}"${c.title ? ` title="${c.title}"` : ''}>${c.label}</th>`
+  ).join('')}</tr>`;
 
   const bodyRows = rows.map((r, i) => {
     const cells = TABLE_COLS.map(c => {
@@ -499,7 +515,7 @@ function buildTable(hist) {
     return `<tr>${cells}</tr>`;
   }).join('');
 
-  wrap.innerHTML = `<table class="dtable">${thead}<tbody>${bodyRows}</tbody></table>`;
+  wrap.innerHTML = `<table class="dtable">${colgroup}<thead>${thead}</thead><tbody>${bodyRows}</tbody></table>`;
 }
 
 // ── ĐÒN BẨY (bảng gọn trên tab Tổng quan) ───────────────────────────────────
@@ -526,7 +542,7 @@ function buildLeveragePanel(items, equity) {
     <div class="grid lev-grid" style="margin-bottom:0;">
       <div class="stat">
         <div class="lbl">Tỷ lệ đòn bẩy</div>
-        <div class="val">${leverage != null ? leverage.toFixed(2) + 'x' : '—'}</div>
+        <div class="val">${leverage != null ? fmtNum(leverage, 2) + 'x' : '—'}</div>
       </div>
       <div class="stat">
         <div class="lbl">Dư nợ margin</div>
@@ -637,6 +653,23 @@ function renderRiskGrid(m) {
   `;
 }
 
+// ── Ghi nhớ lựa chọn hiển thị giữa các lần truy cập (localStorage) ─────────
+// Dùng chung 1 tiền tố khoá để dễ quản lý; nếu trình duyệt chặn localStorage
+// (chế độ ẩn danh khắt khe...) thì lặng lẽ bỏ qua, trang vẫn hoạt động bình
+// thường với giá trị mặc định.
+const PREFS_KEY_CHART = 'ptv1.chartPrefs';   // { metric, type, tf }
+const PREFS_KEY_RISK  = 'ptv1.riskPeriod';   // 'total' hoặc năm, vd '2026'
+
+function loadPref(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw != null ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+function savePref(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* bỏ qua */ }
+}
+
 function wireRiskPanel(s, hist) {
   const select = document.getElementById('riskPeriodSelect');
   if (!select) return;
@@ -646,12 +679,19 @@ function wireRiskPanel(s, hist) {
 
   select.innerHTML = `<option value="total">Tất cả</option>` +
     years.map(y => `<option value="${y}">${y}</option>`).join('');
-  select.value = 'total';
 
-  renderRiskGrid(riskMetricsTotal(s));
+  // Khôi phục lựa chọn kỳ đã xem lần gần nhất (nếu vẫn còn hợp lệ trong danh
+  // sách năm hiện có), mặc định "Tất cả" nếu chưa từng chọn hoặc năm đó
+  // không còn dữ liệu.
+  const saved = loadPref(PREFS_KEY_RISK);
+  const initial = (saved === 'total' || years.includes(saved)) ? saved : 'total';
+  select.value = initial;
+
+  renderRiskGrid(initial === 'total' ? riskMetricsTotal(s) : riskMetricsForYear(hist, initial));
 
   select.onchange = () => {
     const v = select.value;
+    savePref(PREFS_KEY_RISK, v);
     renderRiskGrid(v === 'total' ? riskMetricsTotal(s) : riskMetricsForYear(hist, v));
   };
 }
@@ -754,7 +794,26 @@ function initChart(hist, events) {
   const lineSeries = chart.addLineSeries({ color: '#3ddc97', lineWidth: 2 });
   const vniSeries = chart.addLineSeries({ color: '#7a8ea3', lineWidth: 1.5 });
 
-  const state = { metric: 'value', type: 'candle', tf: 'D' };
+  // Khôi phục lựa chọn hiển thị (Giá trị/%, Nến/Đường, Ngày/Tuần/Tháng) từ
+  // lần truy cập gần nhất; chỉ nhận giá trị hợp lệ, còn lại dùng mặc định.
+  const savedChartPrefs = loadPref(PREFS_KEY_CHART) || {};
+  const state = {
+    metric: ['value', 'pct'].includes(savedChartPrefs.metric) ? savedChartPrefs.metric : 'value',
+    type:   ['candle', 'line'].includes(savedChartPrefs.type) ? savedChartPrefs.type : 'candle',
+    tf:     ['D', 'W', 'M'].includes(savedChartPrefs.tf) ? savedChartPrefs.tf : 'D',
+  };
+
+  // Đồng bộ nút "active" trên giao diện cho khớp với state vừa khôi phục
+  // (mặc định HTML luôn tô đậm lựa chọn đầu tiên, cần cập nhật lại nếu
+  // người dùng lần trước đã chọn khác).
+  function syncSegUI(id, value) {
+    const seg = document.getElementById(id);
+    if (!seg) return;
+    seg.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.v === value));
+  }
+  syncSegUI('metricSeg', state.metric);
+  syncSegUI('typeSeg', state.type);
+  syncSegUI('tfSeg', state.tf);
 
   function currentData() {
     const src = state.metric === 'value' ? dailyOHLC.value : dailyOHLC.pct;
@@ -861,6 +920,7 @@ function initChart(hist, events) {
       seg.querySelectorAll('button').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       state[stateKey] = btn.dataset.v;
+      savePref(PREFS_KEY_CHART, { metric: state.metric, type: state.type, tf: state.tf });
       rebuild();
     });
   }
