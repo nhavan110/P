@@ -1,6 +1,6 @@
 {
   "summary": {
-    "last_updated": "2026-08-16 20:48:04",
+    "last_updated": "2026-08-16 20:58:00",
     "portfolio_value": 70270000.0,
     "cumulative_return": 0.49322325136506207,
     "cumulative_return_vni": 0.3880834256538701,
@@ -30306,283 +30306,329 @@
   "events": [
     {
       "date": "2022-09-15",
-      "symbol": "HPG",
-      "action": "BUY",
-      "quantity": 100.0,
-      "value": 2362400.0
+      "stocks": {
+        "HPG": 100.0
+      },
+      "cash_in": 2362400.0,
+      "cash_out": 0.0,
+      "margin_delta": 0.0
     },
     {
       "date": "2023-07-07",
-      "symbol": "PNJ",
-      "action": "BUY",
-      "quantity": 100.0,
-      "value": 7242200.0
+      "stocks": {
+        "PNJ": 100.0
+      },
+      "cash_in": 7242200.0,
+      "cash_out": 0.0,
+      "margin_delta": 0.0
     },
     {
       "date": "2023-10-04",
-      "symbol": "TCB",
-      "action": "BUY",
-      "quantity": 100.0,
-      "value": 3226000.0
+      "stocks": {
+        "TCB": 100.0
+      },
+      "cash_in": 3226000.0,
+      "cash_out": 0.0,
+      "margin_delta": 0.0
     },
     {
       "date": "2023-10-23",
-      "symbol": "MWG",
-      "action": "BUY",
-      "quantity": 100.0,
-      "value": 4301300.0
+      "stocks": {
+        "MWG": 100.0
+      },
+      "cash_in": 4301300.0,
+      "cash_out": 0.0,
+      "margin_delta": 0.0
     },
     {
       "date": "2023-10-31",
-      "symbol": "MWG",
-      "action": "BUY",
-      "quantity": 100.0,
-      "value": 3801300.0
+      "stocks": {
+        "MWG": 100.0
+      },
+      "cash_in": 3801300.0,
+      "cash_out": 0.0,
+      "margin_delta": 0.0
     },
     {
       "date": "2024-04-02",
-      "symbol": "PNJ",
-      "action": "SELL",
-      "quantity": 100.0,
-      "value": 9800000.0
-    },
-    {
-      "date": "2024-05-23",
-      "symbol": "HPG",
-      "action": "BUY",
-      "quantity": 10.0,
-      "value": 0.0
+      "stocks": {
+        "PNJ": -100.0
+      },
+      "cash_in": 0.0,
+      "cash_out": 9800000.0,
+      "margin_delta": 0.0
     },
     {
       "date": "2024-06-07",
-      "symbol": "MBB",
-      "action": "BUY",
-      "quantity": 100.0,
-      "value": 2235700.0
-    },
-    {
-      "date": "2024-06-20",
-      "symbol": "TCB",
-      "action": "BUY",
-      "quantity": 100.0,
-      "value": 0.0
+      "stocks": {
+        "MBB": 100.0
+      },
+      "cash_in": 2235700.0,
+      "cash_out": 0.0,
+      "margin_delta": 0.0
     },
     {
       "date": "2024-08-06",
-      "symbol": "MWG",
-      "action": "SELL",
-      "quantity": 100.0,
-      "value": 6180000.0
+      "stocks": {
+        "MWG": -100.0
+      },
+      "cash_in": 0.0,
+      "cash_out": 6180000.0,
+      "margin_delta": 0.0
     },
     {
       "date": "2024-08-12",
-      "symbol": "TCB",
-      "action": "BUY",
-      "quantity": 100.0,
-      "value": 2105000.0
+      "stocks": {
+        "TCB": 100.0
+      },
+      "cash_in": 2105000.0,
+      "cash_out": 0.0,
+      "margin_delta": 0.0
     },
     {
       "date": "2024-09-05",
-      "symbol": "HPG",
-      "action": "BUY",
-      "quantity": 100.0,
-      "value": 2525000.0
+      "stocks": {
+        "HPG": 100.0
+      },
+      "cash_in": 2525000.0,
+      "cash_out": 0.0,
+      "margin_delta": 0.0
     },
     {
       "date": "2024-09-19",
-      "symbol": "TCB",
-      "action": "BUY",
-      "quantity": 100.0,
-      "value": 2300000.0
-    },
-    {
-      "date": "2025-01-07",
-      "symbol": "MBB",
-      "action": "BUY",
-      "quantity": 15.0,
-      "value": 0.0
+      "stocks": {
+        "TCB": 100.0
+      },
+      "cash_in": 2300000.0,
+      "cash_out": 0.0,
+      "margin_delta": 0.0
     },
     {
       "date": "2025-03-24",
-      "symbol": "MBB",
-      "action": "SELL",
-      "quantity": 115.0,
-      "value": 2766500.0
+      "stocks": {
+        "MBB": -115.0
+      },
+      "cash_in": 0.0,
+      "cash_out": 2766500.0,
+      "margin_delta": 0.0
     },
     {
       "date": "2025-04-04",
-      "symbol": "HPG",
-      "action": "BUY",
-      "quantity": 100.0,
-      "value": 2415000.0
+      "stocks": {
+        "HPG": 100.0
+      },
+      "cash_in": 2415000.0,
+      "cash_out": 0.0,
+      "margin_delta": 0.0
     },
     {
       "date": "2025-04-09",
-      "symbol": "HPG",
-      "action": "BUY",
-      "quantity": 100.0,
-      "value": 8935000.0
-    },
-    {
-      "date": "2025-04-09",
-      "symbol": "TCB",
-      "action": "BUY",
-      "quantity": 100.0,
-      "value": 8935000.0
-    },
-    {
-      "date": "2025-04-09",
-      "symbol": "MWG",
-      "action": "BUY",
-      "quantity": 100.0,
-      "value": 8935000.0
-    },
-    {
-      "date": "2025-06-13",
-      "symbol": "HPG",
-      "action": "BUY",
-      "quantity": 82.0,
-      "value": 0.0
+      "stocks": {
+        "HPG": 100.0,
+        "TCB": 100.0,
+        "MWG": 100.0
+      },
+      "cash_in": 8935000.0,
+      "cash_out": 0.0,
+      "margin_delta": 0.0
     },
     {
       "date": "2025-07-07",
-      "symbol": "HPG",
-      "action": "BUY",
-      "quantity": 100.0,
-      "value": 0.0
+      "stocks": {
+        "HPG": 100.0
+      },
+      "cash_in": 0.0,
+      "cash_out": 0.0,
+      "margin_delta": 2345000.0
     },
     {
       "date": "2025-07-11",
-      "symbol": "HPG",
-      "action": "SELL",
-      "quantity": 200.0,
-      "value": 2863214.0
+      "stocks": {
+        "HPG": -200.0
+      },
+      "cash_in": 0.0,
+      "cash_out": 2863214.0,
+      "margin_delta": -2345000.0
     },
     {
       "date": "2025-07-18",
-      "symbol": "TCB",
-      "action": "SELL",
-      "quantity": 400.0,
-      "value": 14421163.0
+      "stocks": {
+        "TCB": -400.0
+      },
+      "cash_in": 0.0,
+      "cash_out": 14421163.0,
+      "margin_delta": 0.0
     },
     {
       "date": "2025-08-12",
-      "symbol": "HPG",
-      "action": "SELL",
-      "quantity": 200.0,
-      "value": 5621629.0
+      "stocks": {
+        "HPG": -200.0
+      },
+      "cash_in": 0.0,
+      "cash_out": 5621629.0,
+      "margin_delta": 0.0
     },
     {
       "date": "2025-09-19",
-      "symbol": "FRT",
-      "action": "BUY",
-      "quantity": 100.0,
-      "value": 13093500.0
+      "stocks": {
+        "FRT": 100.0
+      },
+      "cash_in": 13093500.0,
+      "cash_out": 0.0,
+      "margin_delta": 0.0
     },
     {
       "date": "2025-09-26",
-      "symbol": "MWG",
-      "action": "BUY",
-      "quantity": 200.0,
-      "value": 17000082.0
-    },
-    {
-      "date": "2025-09-26",
-      "symbol": "HPG",
-      "action": "BUY",
-      "quantity": 108.0,
-      "value": 17000082.0
+      "stocks": {
+        "MWG": 200.0,
+        "HPG": 108.0
+      },
+      "cash_in": 17000082.0,
+      "cash_out": 6515767.0,
+      "margin_delta": 8391768.0
     },
     {
       "date": "2025-09-29",
-      "symbol": "HPG",
-      "action": "SELL",
-      "quantity": 100.0,
-      "value": 2851289.0
+      "stocks": {
+        "HPG": -100.0
+      },
+      "cash_in": 0.0,
+      "cash_out": 2851289.0,
+      "margin_delta": 0.0
     },
     {
       "date": "2025-09-30",
-      "symbol": "MWG",
-      "action": "SELL",
-      "quantity": 200.0,
-      "value": 15439902.0
+      "stocks": {
+        "MWG": -200.0
+      },
+      "cash_in": 0.0,
+      "cash_out": 15439902.0,
+      "margin_delta": -100000.0
     },
     {
       "date": "2025-10-14",
-      "symbol": "HPG",
-      "action": "BUY",
-      "quantity": 200.0,
-      "value": 0.0
+      "stocks": {
+        "HPG": 200.0
+      },
+      "cash_in": 0.0,
+      "cash_out": 0.0,
+      "margin_delta": 5789863.0
     },
     {
       "date": "2025-12-15",
-      "symbol": "FPT",
-      "action": "BUY",
-      "quantity": 100.0,
-      "value": 20000.0
+      "stocks": {
+        "FPT": 100.0
+      },
+      "cash_in": 20000.0,
+      "cash_out": 0.0,
+      "margin_delta": 9364813.0
     },
     {
       "date": "2026-01-22",
-      "symbol": "MWG",
-      "action": "SELL",
-      "quantity": 200.0,
-      "value": 17165600.0
+      "stocks": {
+        "MWG": -200.0
+      },
+      "cash_in": 0.0,
+      "cash_out": 17165600.0,
+      "margin_delta": 339.0
+    },
+    {
+      "date": "2026-01-26",
+      "stocks": {},
+      "cash_in": 8446783.0,
+      "cash_out": 0.0,
+      "margin_delta": -8446783.0
     },
     {
       "date": "2026-02-24",
-      "symbol": "FPT",
-      "action": "BUY",
-      "quantity": 200.0,
-      "value": 11558540.0
+      "stocks": {
+        "FPT": 200.0
+      },
+      "cash_in": 11558540.0,
+      "cash_out": 0.0,
+      "margin_delta": 7000000.0
     },
     {
       "date": "2026-03-02",
-      "symbol": "FRT",
-      "action": "SELL",
-      "quantity": 100.0,
-      "value": 10866200.0
+      "stocks": {
+        "FRT": -100.0
+      },
+      "cash_in": 0.0,
+      "cash_out": 10866200.0,
+      "margin_delta": -6000000.0
+    },
+    {
+      "date": "2026-03-27",
+      "stocks": {},
+      "cash_in": 8000000.0,
+      "cash_out": 0.0,
+      "margin_delta": -8000000.0
     },
     {
       "date": "2026-05-11",
-      "symbol": "FPT",
-      "action": "BUY",
-      "quantity": 100.0,
-      "value": 0.0
-    },
-    {
-      "date": "2026-05-25",
-      "symbol": "HPG",
-      "action": "BUY",
-      "quantity": 40.0,
-      "value": 0.0
+      "stocks": {
+        "FPT": 100.0
+      },
+      "cash_in": 0.0,
+      "cash_out": 190000.0,
+      "margin_delta": 7007665.0
     },
     {
       "date": "2026-06-03",
-      "symbol": "PNJ",
-      "action": "BUY",
-      "quantity": 100.0,
-      "value": 3704349.0
+      "stocks": {
+        "PNJ": 100.0
+      },
+      "cash_in": 3704349.0,
+      "cash_out": 0.0,
+      "margin_delta": 2802335.0
+    },
+    {
+      "date": "2026-06-10",
+      "stocks": {},
+      "cash_in": 446500.0,
+      "cash_out": 0.0,
+      "margin_delta": -446394.0
     },
     {
       "date": "2026-07-06",
-      "symbol": "PNJ",
-      "action": "BUY",
-      "quantity": 200.0,
-      "value": 6294718.0
+      "stocks": {
+        "PNJ": 200.0
+      },
+      "cash_in": 6294718.0,
+      "cash_out": 0.0,
+      "margin_delta": 4636394.0
     },
     {
       "date": "2026-07-08",
-      "symbol": "PNJ",
-      "action": "BUY",
-      "quantity": 800.0,
-      "value": 25604565.0
+      "stocks": {
+        "PNJ": 800.0
+      },
+      "cash_in": 25604565.0,
+      "cash_out": 0.0,
+      "margin_delta": 14000000.0
     },
     {
       "date": "2026-07-09",
-      "symbol": "PNJ",
-      "action": "BUY",
-      "quantity": 500.0,
-      "value": 19626600.0
+      "stocks": {
+        "PNJ": 500.0
+      },
+      "cash_in": 19626600.0,
+      "cash_out": 0.0,
+      "margin_delta": 7000000.0
+    },
+    {
+      "date": "2026-07-23",
+      "stocks": {},
+      "cash_in": 10000000.0,
+      "cash_out": 0.0,
+      "margin_delta": -10000000.0
+    },
+    {
+      "date": "2026-07-27",
+      "stocks": {},
+      "cash_in": 5000000.0,
+      "cash_out": 0.0,
+      "margin_delta": -5000000.0
     }
   ],
   "positions": {
