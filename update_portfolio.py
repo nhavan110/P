@@ -373,19 +373,35 @@ def build_transaction_events(transactions: pd.DataFrame, wd: pd.DataFrame) -> li
 
         if not has_stock_change and not has_cash and not has_margin_change:
             continue
-        # Chia tách CP / cổ tức bằng CP: CP đổi nhưng không có cashflow lẫn
-        # thay đổi margin đi kèm -> bỏ qua.
+
+        # Phân loại sự kiện để frontend chọn marker phù hợp trên biểu đồ:
+        # - "corporate_action": CP đổi (chia tách / cổ tức bằng CP) nhưng
+        #   không kèm cashflow lẫn thay đổi margin -> KHÔNG phải mua/bán thật.
+        #   Trước đây bị lọc bỏ hoàn toàn, giờ giữ lại nhưng tách riêng khỏi
+        #   "stocks" (dành cho mua/bán thật) sang "corp_stocks".
+        # - "margin_only": chỉ đổi margin (thường là nạp thêm tiền trả bớt nợ
+        #   margin, hoặc vay thêm margin), không có mua/bán CP nào trong ngày.
+        # - "trade": có mua/bán CP thật (kèm hoặc không kèm cash/margin).
         if has_stock_change and not has_cash and not has_margin_change:
-            continue
+            category = "corporate_action"
+        elif has_margin_change and not has_stock_change:
+            category = "margin_only"
+        else:
+            category = "trade"
 
         dt = datetime.strptime(date_str, "%d/%m/%Y")
-        events.append({
+        event = {
             "date":         dt.strftime("%Y-%m-%d"),
-            "stocks":       {sym: safe_num(qty) for sym, qty in stocks.items()},
+            "category":     category,
+            "stocks":       {},
+            "corp_stocks":  {},
             "cash_in":      safe_num(d_val) if d_val else 0.0,
             "cash_out":     safe_num(w_val) if w_val else 0.0,
             "margin_delta": safe_num(margin_delta),
-        })
+        }
+        target_key = "corp_stocks" if category == "corporate_action" else "stocks"
+        event[target_key] = {sym: safe_num(qty) for sym, qty in stocks.items()}
+        events.append(event)
 
     events.sort(key=lambda e: e["date"])
     return events
@@ -526,16 +542,24 @@ _cf_parsed = _parsed_cashflows(cashflows)
 _latest_idx  = df_pr.index[0]
 _latest_date = df_pr.loc[_latest_idx, "date"].date()
 _latest_e1   = float(df_pr.loc[_latest_idx, "E1"])
+_cfs_total   = _cf_parsed + [(_latest_date, _latest_e1)]
 
 try:
-    xirr_total = xirr(_cf_parsed + [(_latest_date, _latest_e1)])
+    xirr_total = xirr(_cfs_total)
 except Exception:
     xirr_total = None
+
+# Lợi nhuận tổng (giá trị tuyệt đối, VNĐ) = E1 hiện tại - vốn ròng đã bỏ vào.
+# Vì amt trong _cf_parsed đã mang dấu chuẩn (D = âm, W = dương, giống góc nhìn
+# NĐT), tổng toàn bộ dòng tiền trong _cfs_total (kể cả E1 cuối) chính là lợi
+# nhuận: E1 + sum(D âm) + sum(W dương) = E1 - (tổng D) + (tổng W).
+profit_total = sum(amt for _, amt in _cfs_total)
 
 # XIRR theo năm: E0 đầu năm (âm, giá trị E1 tại ngày giao dịch đầu tiên của năm) +
 # D/W phát sinh trong năm (nguyên dấu, không double-count với E0/E1 vì đó chỉ là
 # mốc định giá) + E1 cuối năm (dương, giá trị E1 tại ngày giao dịch cuối năm).
-df_pr["XIRR_Year"] = np.nan
+df_pr["XIRR_Year"]   = np.nan
+df_pr["ProfitYear"]  = np.nan
 for year, idx in df_pr.groupby("Year_tmp").groups.items():
     idx = sorted(idx)
     start_idx, end_idx = idx[-1], idx[0]  # df_pr giảm dần theo ngày: idx[-1]=sớm nhất, idx[0]=muộn nhất trong năm
@@ -552,6 +576,11 @@ for year, idx in df_pr.groupby("Year_tmp").groups.items():
     except Exception:
         xirr_year = None
     df_pr.loc[idx, "XIRR_Year"] = xirr_year
+
+    # Lợi nhuận trong năm (giá trị tuyệt đối, VNĐ) = E1 cuối năm - E0 đầu năm -
+    # cộng dồn cashflow phát sinh trong năm. Dùng đúng danh sách cfs ở trên
+    # (chỉ khác dấu E0 đã đảo âm để tính XIRR) nên tổng cfs = lợi nhuận năm.
+    df_pr.loc[idx, "ProfitYear"] = sum(amt for _, amt in cfs)
 
 
 # ── 7f. ALLOCATION + POSITION CONTRIBUTION (mục 4) — chỉ tính ngày mới nhất ──
@@ -837,7 +866,7 @@ def export_json(df: pd.DataFrame, path: Path, events: list = None, positions: di
         "E1", "W", "E0", "D", "DR", "DR(VNI)", "CR", "CR(VNI)",
         "MR", "YR", "YR(VNI)", "Sharpe", "MaxDrawdown",
         "Sharpe_Total", "MaxDrawdown_Total",
-        "Beta", "Alpha", "Volatility", "Correlation", "XIRR_Year",
+        "Beta", "Alpha", "Volatility", "Correlation", "XIRR_Year", "ProfitYear",
     ] if c in records.columns]
 
     history = []
@@ -864,6 +893,7 @@ def export_json(df: pd.DataFrame, path: Path, events: list = None, positions: di
         "volatility_total": safe_num(risk_total.get("volatility")),
         "correlation_total": safe_num(risk_total.get("correlation")),
         "xirr_total": safe_num(xirr_total),
+        "profit_total": safe_num(profit_total),
     }
 
     payload = {"summary": summary, "history": history}

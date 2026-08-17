@@ -58,6 +58,9 @@
     font-size:38px; font-weight:700; letter-spacing:-0.01em;
     line-height:1.1;
   }
+  .hero-profit{
+    font-size:14px; font-weight:600; margin-top:4px;
+  }
   .hero-sub{
     display:flex; gap:18px; margin-top:14px; flex-wrap:wrap;
   }
@@ -81,6 +84,7 @@
   }
   .stat .lbl{font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:6px;}
   .stat .val{font-size:19px; font-weight:700; font-family:'Space Grotesk', sans-serif;}
+  .stat .val-sub{font-size:12px; font-weight:600; margin-top:2px; font-family:'Space Grotesk', sans-serif;}
 
   .chart-panel{
     background:var(--panel);
@@ -127,6 +131,7 @@
   .chart-tooltip .tt-row .tt-lbl{color:var(--muted);}
   .chart-tooltip .tt-up{color:var(--mint);}
   .chart-tooltip .tt-down{color:var(--coral);}
+  .chart-tooltip .tt-amber{color:var(--amber);}
 
   .empty{
     text-align:center; padding:60px 20px; color:var(--muted); font-size:13px; line-height:1.6;
@@ -306,6 +311,9 @@ function render(json) {
   document.getElementById('page-overview').innerHTML = `
     <div class="hero">
       <div class="hero-value">${fmtVND(s.portfolio_value ?? 0)}</div>
+      <div class="hero-profit ${(s.profit_total ?? 0) >= 0 ? 'pos' : 'neg'}">
+        ${(s.profit_total ?? 0) >= 0 ? '+' : ''}${fmtVND(s.profit_total ?? 0)} lợi nhuận
+      </div>
       <div class="hero-sub">
         <div class="pill ${crClass}">
           <span class="lbl">Lợi nhuận tích luỹ</span> ${fmtPct(s.cumulative_return ?? 0)}
@@ -591,7 +599,7 @@ function riskMetricsForYear(hist, year) {
   return {
     return_: row.YR, beta: row.Beta, alpha: row.Alpha, volatility: row.Volatility,
     correlation: row.Correlation, sharpe: row.Sharpe,
-    maxdrawdown: row.MaxDrawdown, xirr: row.XIRR_Year,
+    maxdrawdown: row.MaxDrawdown, xirr: row.XIRR_Year, profit: row.ProfitYear,
   };
 }
 
@@ -601,7 +609,7 @@ function riskMetricsTotal(s) {
     return_: s.cumulative_return,
     beta: s.beta_total, alpha: s.alpha_total, volatility: s.volatility_total,
     correlation: s.correlation_total, sharpe: s.sharpe_total,
-    maxdrawdown: s.max_drawdown_total, xirr: s.xirr_total,
+    maxdrawdown: s.max_drawdown_total, xirr: s.xirr_total, profit: s.profit_total,
   };
 }
 
@@ -613,6 +621,7 @@ function renderRiskGrid(m) {
     <div class="stat">
       <div class="lbl">Lợi nhuận</div>
       <div class="val ${(m.return_ ?? 0) >= 0 ? 'pos' : 'neg'}">${m.return_ != null ? fmtPct(m.return_) : '—'}</div>
+      <div class="val-sub ${(m.profit ?? 0) >= 0 ? 'pos' : 'neg'}">${m.profit != null ? fmtVND(m.profit) : '—'}</div>
     </div>
     <div class="stat">
       <div class="lbl">Beta</div>
@@ -692,10 +701,12 @@ function wireRiskPanel(s, hist) {
 function initChart(hist, events) {
   if (typeof LightweightCharts === 'undefined' || !hist.length) return;
 
-  // 0. Map ngày → sự kiện (gộp sẵn theo ngày ở backend: BUY/SELL CP + thay đổi
-  //    margin). Backend đã tự lọc bỏ các ngày chỉ chia tách/trả cổ tức bằng CP
-  //    (đổi số lượng CP nhưng không có cashflow lẫn thay đổi margin đi kèm),
-  //    nên ở đây chỉ cần dùng thẳng danh sách events.
+  // 0. Map ngày → sự kiện (gộp sẵn theo ngày ở backend). Mỗi event có "category":
+  //    "trade" (mua/bán CP thật, có thể kèm cash/margin) — marker mũi tên
+  //    xanh/đỏ như cũ; "margin_only" (chỉ đổi margin, không mua/bán CP —
+  //    thường là nạp tiền trả bớt/khoản vay thêm margin) và "corporate_action"
+  //    (CP đổi do chia tách/cổ tức bằng CP, không cashflow, không margin) —
+  //    cả hai loại này hiện marker màu vàng (--amber) riêng, xem updateMarkers().
   const eventsByDate = new Map();
   (events || []).forEach(ev => {
     if (!ev || !ev.date) return;
@@ -831,10 +842,13 @@ function initChart(hist, events) {
     const map = new Map();
     for (const [date, ev] of eventsByDate) {
       const key = periodKey(date, tf);
-      if (!map.has(key)) map.set(key, { date: key, stocks: {}, cash_in: 0, cash_out: 0, margin_delta: 0 });
+      if (!map.has(key)) map.set(key, { date: key, stocks: {}, corp_stocks: {}, cash_in: 0, cash_out: 0, margin_delta: 0 });
       const g = map.get(key);
       for (const [sym, qty] of Object.entries(ev.stocks || {})) {
         g.stocks[sym] = (g.stocks[sym] || 0) + qty;
+      }
+      for (const [sym, qty] of Object.entries(ev.corp_stocks || {})) {
+        g.corp_stocks[sym] = (g.corp_stocks[sym] || 0) + qty;
       }
       g.cash_in  += ev.cash_in  || 0;
       g.cash_out += ev.cash_out || 0;
@@ -878,10 +892,16 @@ function initChart(hist, events) {
     chart.timeScale().fitContent();
   }
 
-  // ── Marker mua/bán CP trên chart: hiện ở mọi khung Ngày/Tuần/Tháng,
-  //    gộp theo kỳ đang xem để không bị lệch ngày. Dấu qty dương = mua
-  //    (arrowUp), âm = bán (arrowDown). Thay đổi margin không có marker
-  //    riêng trên chart, chỉ hiện trong tooltip. ──
+  // ── Marker trên chart, hiện ở mọi khung Ngày/Tuần/Tháng, gộp theo kỳ đang
+  //    xem để không bị lệch ngày:
+  //    - Mua/bán CP thật (ev.stocks): mũi tên xanh (mua/arrowUp) / đỏ
+  //      (bán/arrowDown), như cũ.
+  //    - Chỉ đổi margin, không mua/bán CP (ev.margin_delta != 0 và ev.stocks
+  //      rỗng) — thường là nạp thêm tiền trả bớt margin: chấm tròn màu vàng
+  //      (--amber), hướng lên nếu margin tăng, hướng xuống nếu margin giảm.
+  //    - Chia tách CP / cổ tức bằng CP (ev.corp_stocks): ô vuông màu vàng
+  //      (--amber), để phân biệt với mua/bán thật. ──
+  const AMBER = '#f0b64c';
   function updateMarkers() {
     const activeSeries = state.type === 'candle' ? candleSeries : lineSeries;
     const otherSeries = state.type === 'candle' ? lineSeries : candleSeries;
@@ -895,6 +915,8 @@ function initChart(hist, events) {
     const markers = [];
     for (const [key, ev] of currentEventsByPeriod) {
       if (!validTimes.has(key)) continue;
+
+      const hasTrade = Object.values(ev.stocks || {}).some(qty => qty);
       Object.entries(ev.stocks || {}).forEach(([symbol, qty]) => {
         if (!qty) return;
         const isBuy = qty > 0;
@@ -906,6 +928,30 @@ function initChart(hist, events) {
           text: symbol || '',
         });
       });
+
+      // Ngày chỉ đổi margin (nạp/rút tiền trả bớt margin), không có mua/bán CP.
+      if (!hasTrade && ev.margin_delta) {
+        const isUp = ev.margin_delta > 0;
+        markers.push({
+          time: key,
+          position: isUp ? 'belowBar' : 'aboveBar',
+          color: AMBER,
+          shape: 'circle',
+          text: isUp ? 'Vay margin' : 'Trả margin',
+        });
+      }
+
+      // Chia tách CP / cổ tức bằng CP.
+      const corpSymbols = Object.entries(ev.corp_stocks || {}).filter(([, qty]) => qty);
+      if (corpSymbols.length) {
+        markers.push({
+          time: key,
+          position: 'aboveBar',
+          color: AMBER,
+          shape: 'square',
+          text: corpSymbols.map(([sym]) => sym).join(', '),
+        });
+      }
     }
     markers.sort((a, b) => a.time.localeCompare(b.time));
     activeSeries.setMarkers(markers);
@@ -987,6 +1033,10 @@ function initChart(hist, events) {
         if (!qty) return;
         const dir = qty > 0 ? 'tt-up' : 'tt-down';
         rows += `<div class="tt-row"><span class="tt-lbl">${symbol}</span><span class="${dir}">${qty > 0 ? '+' : ''}${fmtNum(qty, 0)}</span></div>`;
+      });
+      Object.entries(periodEv.corp_stocks || {}).forEach(([symbol, qty]) => {
+        if (!qty) return;
+        rows += `<div class="tt-row"><span class="tt-lbl">${symbol} (chia tách/cổ tức)</span><span class="tt-amber">${qty > 0 ? '+' : ''}${fmtNum(qty, 0)}</span></div>`;
       });
       if (periodEv.cash_in) {
         rows += `<div class="tt-row"><span class="tt-lbl">D</span><span class="tt-up">+${fmtVND(periodEv.cash_in)}</span></div>`;
