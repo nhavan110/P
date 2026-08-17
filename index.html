@@ -84,7 +84,6 @@
   }
   .stat .lbl{font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:6px;}
   .stat .val{font-size:19px; font-weight:700; font-family:'Space Grotesk', sans-serif;}
-  .stat .val-sub{font-size:12px; font-weight:600; margin-top:2px; font-family:'Space Grotesk', sans-serif;}
 
   .chart-panel{
     background:var(--panel);
@@ -312,11 +311,11 @@ function render(json) {
     <div class="hero">
       <div class="hero-value">${fmtVND(s.portfolio_value ?? 0)}</div>
       <div class="hero-profit ${(s.profit_total ?? 0) >= 0 ? 'pos' : 'neg'}">
-        ${(s.profit_total ?? 0) >= 0 ? '+' : ''}${fmtVND(s.profit_total ?? 0)} lợi nhuận
+        ${(s.profit_total ?? 0) >= 0 ? '+' : ''}${fmtVND(s.profit_total ?? 0)} lãi/lỗ
       </div>
       <div class="hero-sub">
         <div class="pill ${crClass}">
-          <span class="lbl">Lợi nhuận tích luỹ</span> ${fmtPct(s.cumulative_return ?? 0)}
+          <span class="lbl">Hiệu suất tích luỹ</span> ${fmtPct(s.cumulative_return ?? 0)}
         </div>
         <div class="pill">
           <span class="lbl">VNINDEX</span> ${fmtPct(s.cumulative_return_vni ?? 0)}
@@ -346,7 +345,7 @@ function render(json) {
       <div class="chart-controls">
         <select class="year-select" id="metricSeg">
           <option value="value">Giá trị (đ)</option>
-          <option value="pct">% Lợi nhuận</option>
+          <option value="pct">% Hiệu suất</option>
         </select>
         <select class="year-select" id="typeSeg">
           <option value="candle">Nến</option>
@@ -619,9 +618,8 @@ function renderRiskGrid(m) {
   m = m || {};
   grid.innerHTML = `
     <div class="stat">
-      <div class="lbl">Lợi nhuận</div>
+      <div class="lbl">Hiệu suất</div>
       <div class="val ${(m.return_ ?? 0) >= 0 ? 'pos' : 'neg'}">${m.return_ != null ? fmtPct(m.return_) : '—'}</div>
-      <div class="val-sub ${(m.profit ?? 0) >= 0 ? 'pos' : 'neg'}">${m.profit != null ? fmtVND(m.profit) : '—'}</div>
     </div>
     <div class="stat">
       <div class="lbl">Beta</div>
@@ -644,12 +642,16 @@ function renderRiskGrid(m) {
       <div class="val">${m.sharpe != null ? fmtNum2(m.sharpe) : '—'}</div>
     </div>
     <div class="stat">
-      <div class="lbl">Max drawdown</div>
-      <div class="val neg">${m.maxdrawdown != null ? fmtPct(m.maxdrawdown) : '—'}</div>
-    </div>
-    <div class="stat">
       <div class="lbl">XIRR</div>
       <div class="val ${(m.xirr ?? 0) >= 0 ? 'pos' : 'neg'}">${m.xirr != null ? fmtPct(m.xirr) : '—'}</div>
+    </div>
+    <div class="stat">
+      <div class="lbl">Lãi/Lỗ (VNĐ)</div>
+      <div class="val ${(m.profit ?? 0) >= 0 ? 'pos' : 'neg'}">${m.profit != null ? fmtVND(m.profit) : '—'}</div>
+    </div>
+    <div class="stat">
+      <div class="lbl">Max drawdown</div>
+      <div class="val neg">${m.maxdrawdown != null ? fmtPct(m.maxdrawdown) : '—'}</div>
     </div>
   `;
 }
