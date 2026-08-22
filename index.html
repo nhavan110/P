@@ -226,6 +226,61 @@
     text-align:center; margin-top:24px; font-size:10px; color:var(--muted);
   }
 
+  /* ── Tab 03 · Phân tích doanh nghiệp ── */
+  #page-company{
+    max-width:1600px; width:100%;
+    margin:0 auto;
+    padding:0 16px;
+  }
+  .co-crumb{
+    display:flex; align-items:center; flex-wrap:wrap; gap:6px;
+    font-size:11px; color:var(--muted); margin-bottom:12px; padding:0 4px;
+  }
+  .co-crumb button{
+    background:none; border:none; color:var(--mint); cursor:pointer;
+    font-family:'JetBrains Mono', monospace; font-size:11px; padding:0;
+  }
+  .co-crumb button:hover{ text-decoration:underline; }
+  .co-crumb .sep{ color:var(--panel-border); }
+  .chip-grid{
+    display:flex; flex-wrap:wrap; gap:8px; margin-bottom:4px;
+  }
+  .chip{
+    background:var(--panel); border:1px solid var(--panel-border); color:var(--text);
+    font-family:'JetBrains Mono', monospace; font-size:12px; font-weight:600;
+    padding:10px 16px; border-radius:10px; cursor:pointer;
+    transition:border-color .15s, color .15s;
+  }
+  .chip:hover{ border-color:var(--mint); color:var(--mint); }
+  .chip.sheet-chip{ font-weight:500; text-transform:none; }
+  table.ftable{
+    border-collapse:collapse; width:max-content; min-width:100%;
+    font-size:clamp(9.5px, 0.8vw, 12px);
+  }
+  table.ftable th, table.ftable td{
+    padding:7px 10px; text-align:right; border-bottom:1px solid var(--panel-border);
+    border-right:1px solid var(--panel-border);
+    white-space:nowrap; line-height:1.3;
+  }
+  table.ftable th{
+    position:sticky; top:0; z-index:2;
+    background:#161d25; color:var(--text); font-weight:700;
+    font-family:'Space Grotesk', sans-serif; font-size:clamp(8.5px, 0.72vw, 11px);
+  }
+  table.ftable td.ft-label, table.ftable th.ft-label{
+    text-align:left; position:sticky; left:0; z-index:1;
+    background:#0d1218; min-width:220px; max-width:340px;
+    white-space:normal;
+  }
+  table.ftable th.ft-label{ z-index:3; }
+  table.ftable tbody tr:hover td{ background:#161d25; }
+  table.ftable tbody tr:hover td.ft-label{ background:#1a222c; }
+  table.ftable td.ft-neg{ color:var(--coral); }
+  .co-table-scroll{
+    overflow:auto; max-height:640px;
+    border:1px solid var(--panel-border); border-radius:10px;
+  }
+
   /* ── Điều hướng trang ── */
   nav.tabs{
     display:flex; gap:6px; background:var(--panel); border:1px solid var(--panel-border);
@@ -254,6 +309,7 @@
     <nav class="tabs" id="pageTabs">
       <button type="button" data-page="overview" class="active">01 · Tổng quan</button>
       <button type="button" data-page="table">02 · Bảng dữ liệu</button>
+      <button type="button" data-page="company">03 · Phân tích doanh nghiệp</button>
     </nav>
 
     <div id="page-overview" class="page active"></div>
@@ -262,6 +318,7 @@
   <!-- Nằm ngoài .wrap (chứ không phải bên trong) để có thể rộng hơn 760px và
        canh giữa đúng theo toàn bộ viewport — xem CSS #page-table ở trên. -->
   <div id="page-table" class="page"></div>
+  <div id="page-company" class="page"></div>
 
   <div class="wrap">
     <footer>Tự động cập nhật qua GitHub Actions · dữ liệu từ data/data.json</footer>
@@ -1066,7 +1123,153 @@ function initChart(hist, events) {
   rebuild();
 }
 
-// ── ĐIỀU HƯỚNG TRANG (Tổng quan / Bảng dữ liệu) ─────────────────────────────
+// ── TAB 03 · PHÂN TÍCH DOANH NGHIỆP ─────────────────────────────────────────
+// Dữ liệu nạp từ data/companies.json (do fetch_company_financials.py tạo qua
+// GitHub Actions, đọc trực tiếp các file .xlsx trong folder "đc/" trên Google
+// Drive). Luồng: chọn doanh nghiệp → chọn sheet → hiện bảng.
+const companyState = { loaded: false, data: null, ticker: null, sheet: null };
+
+async function ensureCompanyData() {
+  if (companyState.loaded) return;
+  const wrap = document.getElementById('page-company');
+  wrap.innerHTML = `<div class="empty">Đang tải dữ liệu…</div>`;
+  try {
+    const res = await fetch('data/companies.json?_=' + Date.now());
+    if (!res.ok) throw new Error('not found');
+    const json = await res.json();
+    companyState.data = json.companies || {};
+    companyState.loaded = true;
+    renderCompanyRoot();
+  } catch (e) {
+    wrap.innerHTML = `
+      <div class="empty">
+        Chưa có dữ liệu doanh nghiệp.<br><br>
+        Cấu hình secret <code>GOOGLE_DRIVE_COMPANIES_FOLDER_ID</code> trỏ tới folder
+        <code>đc/</code> trên Google Drive rồi chạy lại workflow
+        (tab <b>Actions</b> → <b>Update Portfolio</b> → <b>Run workflow</b>)
+        để tạo file <code>data/companies.json</code>.
+      </div>`;
+  }
+}
+
+function coCrumbHtml() {
+  const parts = [`<button type="button" data-crumb="root">Doanh nghiệp</button>`];
+  if (companyState.ticker) {
+    parts.push(`<span class="sep">/</span>`);
+    parts.push(companyState.sheet
+      ? `<button type="button" data-crumb="company">${companyState.ticker}</button>`
+      : `<span>${companyState.ticker}</span>`);
+  }
+  if (companyState.sheet) {
+    parts.push(`<span class="sep">/</span><span>${companyState.sheet}</span>`);
+  }
+  return `<div class="co-crumb">${parts.join('')}</div>`;
+}
+
+function wireCoCrumb(wrap) {
+  wrap.querySelectorAll('.co-crumb [data-crumb]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.crumb === 'root') { companyState.ticker = null; companyState.sheet = null; renderCompanyRoot(); }
+      else if (btn.dataset.crumb === 'company') { companyState.sheet = null; renderCompanySheetList(); }
+    });
+  });
+}
+
+function renderCompanyRoot() {
+  const wrap = document.getElementById('page-company');
+  const tickers = Object.keys(companyState.data).sort();
+  if (!tickers.length) {
+    wrap.innerHTML = `<div class="empty">Chưa có doanh nghiệp nào trong data/companies.json.</div>`;
+    return;
+  }
+  wrap.innerHTML = `
+    <div class="table-panel">
+      <div class="table-title"><span>Chọn doanh nghiệp</span></div>
+      <div class="chip-grid" id="coTickerGrid">
+        ${tickers.map(t => `<button type="button" class="chip" data-ticker="${t}">${t}</button>`).join('')}
+      </div>
+    </div>`;
+  wrap.querySelectorAll('[data-ticker]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      companyState.ticker = btn.dataset.ticker;
+      companyState.sheet = null;
+      renderCompanySheetList();
+    });
+  });
+}
+
+function renderCompanySheetList() {
+  const wrap = document.getElementById('page-company');
+  const co = companyState.data[companyState.ticker];
+  const sheets = co?.sheets || [];
+  wrap.innerHTML = `
+    ${coCrumbHtml()}
+    <div class="table-panel">
+      <div class="table-title">
+        <span>${companyState.ticker}${co?.file_name ? ' · ' + co.file_name : ''}</span>
+      </div>
+      <div class="chip-grid">
+        ${sheets.map(s => `<button type="button" class="chip sheet-chip" data-sheet="${s.name}">${s.name}</button>`).join('')}
+      </div>
+    </div>`;
+  wireCoCrumb(wrap);
+  wrap.querySelectorAll('[data-sheet]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      companyState.sheet = btn.dataset.sheet;
+      renderCompanySheetTable();
+    });
+  });
+}
+
+// Định dạng 1 cell: số → nhóm hàng nghìn theo vi-VN (âm tô màu coral), text/None giữ nguyên.
+function fmtCoCell(v) {
+  if (v === null || v === undefined || v === '') return '';
+  if (typeof v === 'number') {
+    const isInt = Number.isInteger(v);
+    return new Intl.NumberFormat('vi-VN', {
+      minimumFractionDigits: isInt ? 0 : 2,
+      maximumFractionDigits: isInt ? 0 : 2,
+    }).format(v);
+  }
+  return String(v);
+}
+
+function renderCompanySheetTable() {
+  const wrap = document.getElementById('page-company');
+  const co = companyState.data[companyState.ticker];
+  const sheet = (co?.sheets || []).find(s => s.name === companyState.sheet);
+  const rows = sheet?.rows || [];
+
+  let tableHtml = '<div class="empty">Sheet không có dữ liệu.</div>';
+  if (rows.length) {
+    const header = rows[0];
+    const body = rows.slice(1);
+    const thead = `<tr>${header.map((h, i) =>
+      `<th class="${i === 0 ? 'ft-label' : ''}">${h ?? ''}</th>`).join('')}</tr>`;
+    const tbody = body.map(row => {
+      const cells = row.map((v, i) => {
+        if (i === 0) return `<td class="ft-label">${v ?? ''}</td>`;
+        const neg = typeof v === 'number' && v < 0 ? ' ft-neg' : '';
+        return `<td class="${neg}">${fmtCoCell(v)}</td>`;
+      }).join('');
+      return `<tr>${cells}</tr>`;
+    }).join('');
+    tableHtml = `<div class="co-table-scroll"><table class="ftable"><thead>${thead}</thead><tbody>${tbody}</tbody></table></div>`;
+  }
+
+  wrap.innerHTML = `
+    ${coCrumbHtml()}
+    <div class="table-panel">
+      <div class="table-title">
+        <span>${companyState.ticker} · ${companyState.sheet}</span>
+        <span class="table-hint">${rows.length ? (rows.length - 1) + ' dòng · cuộn để xem thêm' : ''}</span>
+      </div>
+      ${tableHtml}
+    </div>`;
+  wireCoCrumb(wrap);
+}
+
+// ── ĐIỀU HƯỚNG TRANG (Tổng quan / Bảng dữ liệu / Phân tích doanh nghiệp) ────
 function initPageTabs() {
   const tabs = document.getElementById('pageTabs');
   if (!tabs || tabs.dataset.wired) return; // chỉ gắn sự kiện 1 lần
@@ -1079,7 +1282,10 @@ function initPageTabs() {
     if (el) el.classList.add('active');
     // Biểu đồ dùng canvas: cần resize lại khi panel vừa được hiện ra
     if (name === 'overview') window.dispatchEvent(new Event('resize'));
+    if (name === 'company') ensureCompanyData();
   }
+
+  const validPages = ['overview', 'table', 'company'];
 
   tabs.addEventListener('click', e => {
     const btn = e.target.closest('button');
@@ -1091,12 +1297,12 @@ function initPageTabs() {
 
   window.addEventListener('hashchange', () => {
     const name = location.hash.replace('#', '') || 'overview';
-    showPage(name === 'table' ? 'table' : 'overview');
+    showPage(validPages.includes(name) ? name : 'overview');
   });
 
-  // Mở đúng trang theo hash lúc tải trang (cho phép link thẳng tới #table)
+  // Mở đúng trang theo hash lúc tải trang (cho phép link thẳng tới #table, #company)
   const initial = location.hash.replace('#', '');
-  showPage(initial === 'table' ? 'table' : 'overview');
+  showPage(validPages.includes(initial) ? initial : 'overview');
 }
 
 loadData();
