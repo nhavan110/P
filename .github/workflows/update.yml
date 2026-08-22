@@ -12,6 +12,9 @@ permissions:
 env:
   GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
   GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
+  # ID của folder "đc/" trên Google Drive (chứa TCB/TCB.xlsx, HPG/HPG.xlsx, ...)
+  # dùng cho tab "Phân tích doanh nghiệp". Để trống nếu chưa dùng tính năng này.
+  GOOGLE_DRIVE_COMPANIES_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_COMPANIES_FOLDER_ID }}
 
 jobs:
   update:
@@ -33,6 +36,9 @@ jobs:
 
       - name: Upload MyPortfolio.xlsx to Google Drive
         run: python upload_to_drive.py
+
+      - name: Fetch company financials (tab Phân tích doanh nghiệp)
+        run: python fetch_company_financials.py
 
       - name: Commit and push updated data
         run: |
