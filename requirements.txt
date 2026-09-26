@@ -3,6 +3,29 @@ numpy
 pandas
 openpyxl
 scipy
-vnstock
 google-api-python-client
 google-auth
+
+# --- Dependencies của vnstock (cài thủ công thay vì để pip tự kéo) ---
+# `vnstock` VÀ `vnai` (dependency bắt buộc của nó) đang bị PyPI đưa vào
+# trạng thái "quarantined" từ ~09/2026 -> pip không cài được qua PyPI nữa.
+# Vì vậy:
+#   - `vnstock` được cài trực tiếp từ GitHub (xem update.yml), bỏ qua PyPI.
+#   - `vnai` được thay bằng stub nội bộ ở vendor/vnai_stub (chỉ cần cho
+#     import, không ảnh hưởng dữ liệu lấy về).
+#   - Các dependency còn lại của vnstock (không bị quarantine) liệt kê ở đây
+#     để cài qua PyPI như bình thường.
+#   - KHÔNG cài vnstock_ezchart: đây chỉ là backend vẽ biểu đồ fallback,
+#     import lazy (không bắt buộc), và bản thân nó lại phụ thuộc `vnstock`
+#     trên PyPI (đang quarantine) -> gây xung đột dependency nếu thêm vào.
+#     update_portfolio.py không dùng tính năng vẽ biểu đồ của vnstock nên
+#     bỏ qua an toàn.
+beautifulsoup4
+pydantic
+psutil
+fake_useragent
+seaborn
+packaging>=20.0
+importlib-metadata>=1.0
+tenacity
+pytz
