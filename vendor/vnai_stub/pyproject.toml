@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vnai"
+version = "0.0.0"
+description = "No-op local stub for the 'vnai' package (quarantined on PyPI as of 2026-09), used only to satisfy vnstock's import of vnai.optimize_execution and related helpers."
+requires-python = ">=3.9"
+
+[tool.setuptools]
+packages = ["vnai", "vnai.scope"]
