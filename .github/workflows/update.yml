@@ -31,6 +31,20 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # `vnstock` và dependency bắt buộc của nó là `vnai` đang bị PyPI
+      # "quarantined" (từ ~09/2026) nên không cài được qua `pip install
+      # vnstock` bình thường. Workaround: cài stub nội bộ cho `vnai`
+      # (vendor/vnai_stub — chỉ để import không lỗi, không đổi hành vi lấy
+      # dữ liệu), rồi cài `vnstock` thẳng từ GitHub với --no-deps (các
+      # dependency thật khác của nó đã nằm trong requirements.txt ở trên).
+      # Khi PyPI gỡ quarantine, có thể xoá bước này và trả `vnstock` về lại
+      # requirements.txt như cũ.
+      - name: Install vnai stub (PyPI quarantine workaround)
+        run: pip install ./vendor/vnai_stub
+
+      - name: Install vnstock from GitHub (PyPI quarantine workaround)
+        run: pip install --no-deps git+https://github.com/thinh-vu/vnstock.git@v4.0.4
+
       - name: Run update script
         run: python update_portfolio.py
 
