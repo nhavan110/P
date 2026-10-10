@@ -1,6 +1,6 @@
 {
   "summary": {
-    "last_updated": "2026-10-10 00:21:58",
+    "last_updated": "2026-10-10 23:07:40",
     "portfolio_value": 30155000.0,
     "cumulative_return": -0.14134192926433975,
     "cumulative_return_vni": 0.3929081771912093,
@@ -11,7 +11,7 @@
     "beta_total": 1.300087529457347,
     "alpha_total": -0.08769609174818882,
     "volatility_total": 0.3717015011789027,
-    "correlation_total": 0.6725261497506144,
+    "correlation_total": 0.6725261497506148,
     "xirr_total": -0.8882850785114627,
     "profit_total": -33722021.0
   },
