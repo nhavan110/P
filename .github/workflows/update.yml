@@ -58,6 +58,6 @@ jobs:
         run: |
           git config user.name "portfolio-bot"
           git config user.email "actions@github.com"
-          git add data/ manual_entries.csv
+          git add data/
           git diff --cached --quiet || git commit -m "Auto update portfolio $(date -u +'%Y-%m-%d %H:%M UTC')"
           git push
