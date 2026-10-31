@@ -40,11 +40,10 @@ _vnstock_env.get_hosting_service = _safe_get_hosting_service
 # ── CẤU HÌNH ─────────────────────────────────────────────────────────────────
 BASE_DIR     = Path(__file__).resolve().parent
 PRICE_HISTORY_FILE     = BASE_DIR / "data" / "price_history.csv"      # giá thô (input/cache), KHÔNG chứa W/D hay kết quả
-CASHFLOWS_FILE          = BASE_DIR / "data" / "cashflows.csv"          # sổ nạp/rút tiền (W/D), tích luỹ dần
+CASHFLOWS_FILE          = BASE_DIR / "data" / "cashflows.csv"          # sổ nạp/rút tiền (W/D) — SOURCE OF TRUTH, sửa tay trực tiếp
 PORTFOLIO_HISTORY_FILE  = BASE_DIR / "data" / "portfolio_history.csv"  # output: toàn bộ dữ liệu đã tính, ghi lại mỗi lần chạy
 OUTPUT_FILE  = BASE_DIR / "data" / "MyPortfolio.xlsx"                  # output: bản Excel định dạng đẹp để xem/Drive
 JSON_FILE    = BASE_DIR / "data" / "data.json"   # trong thư mục data/, khớp với fetch('data/data.json') trong index.html và được workflow "git add data/" commit
-MANUAL_FILE  = BASE_DIR / "manual_entries.csv"       # inbox nhập W/D thủ công, tự xoá sau khi được gộp vào cashflows.csv
 TRANSACTIONS_FILE = BASE_DIR / "data" / "transactions.csv"  # sổ giao dịch mua/bán CP + margin — SOURCE OF TRUTH của holdings
 SHEET_NAME   = "Sheet1"
 VNI_START    = "2022-06-01"
@@ -165,14 +164,11 @@ print(f"✅ Đã lưu: {PRICE_HISTORY_FILE} ({len(price_hist_out)} dòng)")
 df_pr = price_hist.sort_values("date", ascending=False).reset_index(drop=True)
 
 
-# ── 5. NẠP/RÚT TIỀN (W/D) — sổ cashflows.csv, thay cho input() thủ công ─────
-# Trước đây bước này hỏi trực tiếp trên terminal. Vì chạy tự động trên GitHub
-# Actions không có ai ngồi gõ, ta đọc từ manual_entries.csv thay thế.
-# Khi cần thêm W/D: mở file manual_entries.csv trên GitHub (web), thêm dòng
-# "date,type,value" (vd: 12/08/2026,D,10000000). Lần chạy tiếp theo sẽ tự gộp
-# dòng đó vào data/cashflows.csv (sổ tích luỹ vĩnh viễn) rồi tự xoá dòng đã xử
-# lý khỏi manual_entries.csv. cashflows.csv KHÔNG bị ghi đè mỗi lần chạy như
-# portfolio_history.csv — nó chỉ được nối thêm (append), giống transactions.csv.
+# ── 5. NẠP/RÚT TIỀN (W/D) — sổ data/cashflows.csv ───────────────────────────
+# Khi cần thêm W/D: mở data/cashflows.csv trên GitHub (web), thêm dòng
+# "date,type,value" (vd: 12/08/2026,D,10000000) rồi commit. Script chỉ ĐỌC
+# file này, không ghi lại. Nếu 1 ngày có nhiều dòng W (hoặc nhiều dòng D),
+# chúng được CỘNG DỒN.
 df_pr["date_str"] = df_pr["date"].dt.strftime("%d/%m/%Y")
 valid_dates = set(df_pr["date_str"])
 
@@ -184,47 +180,14 @@ def load_cashflows(path: Path) -> pd.DataFrame:
     return df if not df.empty else pd.DataFrame(columns=["date", "type", "value"])
 
 
-def apply_manual_entries(cashflows_df: pd.DataFrame, manual_file: Path,
-                          valid_dates: set) -> pd.DataFrame:
-    if not manual_file.exists():
-        return cashflows_df
-    try:
-        manual_df = pd.read_csv(manual_file)
-    except pd.errors.EmptyDataError:
-        return cashflows_df
-    if manual_df.empty:
-        return cashflows_df
-
-    new_rows = []
-    for _, row in manual_df.iterrows():
-        date_str = str(row["date"]).strip()
-        option   = str(row["type"]).strip().upper()
-        if option not in ("W", "D"):
-            print(f"⚠️  Bỏ qua dòng không hợp lệ (type='{option}')")
-            continue
-        try:
-            value = float(row["value"])
-        except (ValueError, TypeError):
-            print(f"⚠️  Bỏ qua dòng không hợp lệ (value='{row['value']}')")
-            continue
-        if date_str not in valid_dates:
-            print(f"⚠️  Không tìm thấy ngày {date_str} trong price_history.csv, bỏ qua")
-            continue
-        new_rows.append({"date": date_str, "type": option, "value": value})
-        print(f"✅ Đã thêm {option} ngày {date_str} = {value:,.0f} vào cashflows.csv")
-
-    if new_rows:
-        cashflows_df = pd.concat([cashflows_df, pd.DataFrame(new_rows)], ignore_index=True)
-
-    # Xoá các dòng đã xử lý, chỉ giữ lại header
-    pd.DataFrame(columns=["date", "type", "value"]).to_csv(manual_file, index=False)
-    return cashflows_df
-
-
 cashflows = load_cashflows(CASHFLOWS_FILE)
-cashflows = apply_manual_entries(cashflows, MANUAL_FILE, valid_dates)
-CASHFLOWS_FILE.parent.mkdir(parents=True, exist_ok=True)
-cashflows.to_csv(CASHFLOWS_FILE, index=False)
+
+# Cảnh báo nếu có ngày W/D không nằm trong price_history.csv (ngày nghỉ giao dịch /
+# gõ sai ngày): dòng đó vẫn vào XIRR & lợi nhuận tổng nhưng sẽ rơi khỏi DR/CR vì
+# không khớp được với dòng giá nào.
+_bad_cf_dates = set(cashflows["date"].astype(str).str.strip()) - valid_dates
+if _bad_cf_dates:
+    print(f"⚠️  cashflows.csv có ngày không có trong price_history.csv: {sorted(_bad_cf_dates)}")
 
 # Gộp W/D vào bảng làm việc. Nếu 1 ngày có nhiều dòng W (hoặc nhiều dòng D)
 # trong cashflows.csv, chúng được CỘNG DỒN — khác với bản cũ (ghi đè cột, chỉ
