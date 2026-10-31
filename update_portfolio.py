@@ -814,8 +814,8 @@ for row in ws.iter_rows(min_row=1, max_row=ws.max_row, min_col=1, max_col=ws.max
             cell.border = thin
 
 COLOR_MAP = {
-    "date": "C0FFC0", "HPG": "C0FFC0", "TCB": "C0FFC0", "FPT": "C0FFC0", "PNJ": "C0FFC0",
-    "FRT": "CCFFFF", "MWG": "CCFFFF", "MBB": "CCFFFF",
+    "date": "C0FFC0", "HPG": "C0FFC0", "TCB": "C0FFC0", "FPT": "C0FFC0",
+    "PNJ": "CCFFFF", "FRT": "CCFFFF", "MWG": "CCFFFF", "MBB": "CCFFFF",
     "VNINDEX": "FFA500",
     "E1": "4F81BD", "W": "4F81BD", "E0": "4F81BD", "D": "4F81BD",
     "DR": "8E7CC3", "DR(VNI)": "8E7CC3", "CR": "8E7CC3", "MR": "8E7CC3",
