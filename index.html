@@ -359,6 +359,7 @@ function render(json) {
   const s = json.summary || {};
   const hist = json.history || [];
   const events = json.events ?? [];
+  setTableStockCodes(json.stock_codes ?? []);
   const pos = json.positions ?? { as_of_date: null, items: [] };
 
   document.getElementById('updated').textContent =
@@ -440,7 +441,6 @@ function render(json) {
       <div id="positionsTableWrap"></div>
     </div>
 
-    <div class="table-panel" id="leveragePanel"></div>
   `;
 
   document.getElementById('page-table').innerHTML = `
@@ -456,7 +456,6 @@ function render(json) {
   buildTable(hist);
   initPageTabs();
   buildPositionsTable(pos.items ?? []);
-  buildLeveragePanel(pos.items ?? [], s.portfolio_value ?? 0);
   wireRiskPanel(s, hist);
 
   try {
@@ -483,15 +482,10 @@ function fmtPctPlain(n) {
 // tất cả — nhờ vậy cột ngày đủ rộng để không xuống dòng mà các cột số ngắn
 // cũng không bị kéo giãn thừa thãi, và tổng bảng luôn vừa khít khung (không
 // cần cuộn ngang).
-const TABLE_COLS = [
+const TABLE_COLS_HEAD = [
   { key: 'date',         label: 'date',    title: '',              cls: '',        w: 10, fmt: v => fmtDate(v) },
-  { key: 'HPG',          label: 'HPG',     title: '',              cls: 'g-price',  w: 7,  fmt: v => fmtNum(v, 0) },
-  { key: 'TCB',          label: 'TCB',     title: '',              cls: 'g-price',  w: 7,  fmt: v => fmtNum(v, 0) },
-  { key: 'FPT',          label: 'FPT',     title: '',              cls: 'g-price',  w: 7,  fmt: v => fmtNum(v, 0) },
-  { key: 'PNJ',          label: 'PNJ',     title: '',              cls: 'g-price',  w: 7,  fmt: v => fmtNum(v, 0) },
-  { key: 'FRT',          label: 'FRT',     title: '',              cls: 'g-cyan',   w: 7,  fmt: v => fmtNum(v, 0) },
-  { key: 'MWG',          label: 'MWG',     title: '',              cls: 'g-cyan',   w: 7,  fmt: v => fmtNum(v, 0) },
-  { key: 'MBB',          label: 'MBB',     title: '',              cls: 'g-cyan',   w: 7,  fmt: v => fmtNum(v, 0) },
+];
+const TABLE_COLS_TAIL = [
   { key: 'VNINDEX',      label: 'VNINDEX', title: '',              cls: 'g-vni',    w: 8,  fmt: v => fmtNum(v, 2) },
   { key: 'E1',           label: 'E1',      title: '',              cls: 'g-cash',   w: 9,  fmt: v => fmtNum(v, 0) },
   { key: 'W',            label: 'W',       title: '',              cls: 'g-cash',   w: 9,  fmt: v => fmtNum(v, 0) },
@@ -506,6 +500,14 @@ const TABLE_COLS = [
   { key: 'Sharpe',       label: 'Sharpe',  title: 'Sharpe ratio',  cls: 'g-stat',   w: 6,  fmt: v => fmtNum(v, 2), merge: true },
   { key: 'MaxDrawdown',  label: 'MDD',     title: 'Max drawdown',  cls: 'g-stat',   w: 7,  fmt: v => fmtPct(v),  merge: true },
 ];
+// Cột mã CK lấy động từ data.json (stock_codes) — không còn cố định 7 mã.
+let TABLE_COLS = [...TABLE_COLS_HEAD, ...TABLE_COLS_TAIL];
+function setTableStockCodes(codes) {
+  const stockCols = (codes || []).map((c, i) => ({
+    key: c, label: c, title: '', cls: i % 2 === 0 ? 'g-price' : 'g-cyan', w: 7, fmt: v => fmtNum(v, 0),
+  }));
+  TABLE_COLS = [...TABLE_COLS_HEAD, ...stockCols, ...TABLE_COLS_TAIL];
+}
 
 function fmtNum(n, decimals) {
   if (n === null || n === undefined || Number.isNaN(n)) return '—';
@@ -574,47 +576,6 @@ function buildTable(hist) {
   }).join('');
 
   wrap.innerHTML = `<table class="dtable">${colgroup}<thead>${thead}</thead><tbody>${bodyRows}</tbody></table>`;
-}
-
-// ── ĐÒN BẨY (bảng gọn trên tab Tổng quan) ───────────────────────────────────
-// Không có sẵn field "margin" riêng trong data.json, nhưng có thể suy ra:
-// giá trị thực (gross) của các mã CP đang nắm giữ = tổng value trong positions,
-// còn portfolio_value (E1) là VỐN RÒNG (đã trừ nợ margin). Chênh lệch giữa
-// hai số này chính là dư nợ margin hiện tại.
-function buildLeveragePanel(items, equity) {
-  const panel = document.getElementById('leveragePanel');
-  if (!panel) return;
-  const grossAssets = items.reduce((sum, p) => sum + (p.value ?? 0), 0);
-  const margin = Math.max(0, grossAssets - equity);
-  const leverage = equity > 0 ? grossAssets / equity : null;
-
-  if (!items.length || equity <= 0) {
-    panel.innerHTML = `
-      <div class="table-title"><span>Đòn bẩy</span></div>
-      <div style="padding:4px 4px 2px;color:var(--muted);font-size:12px;">Chưa có dữ liệu.</div>`;
-    return;
-  }
-
-  panel.innerHTML = `
-    <div class="table-title"><span>Đòn bẩy</span></div>
-    <div class="grid lev-grid" style="margin-bottom:0;">
-      <div class="stat">
-        <div class="lbl">Tỷ lệ đòn bẩy</div>
-        <div class="val">${leverage != null ? fmtNum(leverage, 2) + 'x' : '—'}</div>
-      </div>
-      <div class="stat">
-        <div class="lbl">Dư nợ margin</div>
-        <div class="val ${margin > 0 ? 'neg' : ''}">${fmtVND(margin)}</div>
-      </div>
-      <div class="stat">
-        <div class="lbl">Tổng giá trị tài sản</div>
-        <div class="val">${fmtVND(grossAssets)}</div>
-      </div>
-      <div class="stat">
-        <div class="lbl">Vốn ròng (equity)</div>
-        <div class="val">${fmtVND(equity)}</div>
-      </div>
-    </div>`;
 }
 
 // ── PHÂN BỔ DANH MỤC (bảng gọn trên tab Tổng quan) ──────────────────────────
@@ -763,11 +724,9 @@ function initChart(hist, events) {
   if (typeof LightweightCharts === 'undefined' || !hist.length) return;
 
   // 0. Map ngày → sự kiện (gộp sẵn theo ngày ở backend). Mỗi event có "category":
-  //    "trade" (mua/bán CP thật, có thể kèm cash/margin) — marker mũi tên
-  //    xanh/đỏ như cũ; "margin_only" (chỉ đổi margin, không mua/bán CP —
-  //    thường là nạp tiền trả bớt/khoản vay thêm margin) và "corporate_action"
-  //    (CP đổi do chia tách/cổ tức bằng CP, không cashflow, không margin) —
-  //    cả hai loại này hiện marker màu vàng (--amber) riêng, xem updateMarkers().
+  //    "trade" (mua/bán CP thật, có kèm D/W) — marker mũi tên xanh/đỏ như cũ;
+  //    "corporate_action" (CP đổi mà không có tiền: cổ phiếu thưởng/chia tách) —
+  //    marker màu vàng (--amber) riêng, xem updateMarkers().
   const eventsByDate = new Map();
   (events || []).forEach(ev => {
     if (!ev || !ev.date) return;
@@ -896,14 +855,14 @@ function initChart(hist, events) {
   }
 
   // Gộp sự kiện theo cùng đơn vị thời gian đang hiển thị (Ngày/Tuần/Tháng) để
-  // mỗi nến tuần/tháng vẫn hiện đủ thay đổi CP/cashflow/margin diễn ra trong
-  // kỳ đó (cộng dồn qty theo mã, cộng dồn cash_in/cash_out/margin_delta).
+  // mỗi nến tuần/tháng vẫn hiện đủ thay đổi CP/cashflow diễn ra trong
+  // kỳ đó (cộng dồn qty theo mã, cộng dồn cash_in/cash_out).
   function eventsGroupedByTf(tf) {
     if (tf === 'D') return eventsByDate;
     const map = new Map();
     for (const [date, ev] of eventsByDate) {
       const key = periodKey(date, tf);
-      if (!map.has(key)) map.set(key, { date: key, stocks: {}, corp_stocks: {}, cash_in: 0, cash_out: 0, margin_delta: 0 });
+      if (!map.has(key)) map.set(key, { date: key, stocks: {}, corp_stocks: {}, cash_in: 0, cash_out: 0 });
       const g = map.get(key);
       for (const [sym, qty] of Object.entries(ev.stocks || {})) {
         g.stocks[sym] = (g.stocks[sym] || 0) + qty;
@@ -913,7 +872,6 @@ function initChart(hist, events) {
       }
       g.cash_in  += ev.cash_in  || 0;
       g.cash_out += ev.cash_out || 0;
-      g.margin_delta += ev.margin_delta || 0;
     }
     return map;
   }
@@ -957,10 +915,7 @@ function initChart(hist, events) {
   //    xem để không bị lệch ngày:
   //    - Mua/bán CP thật (ev.stocks): mũi tên xanh (mua/arrowUp) / đỏ
   //      (bán/arrowDown), như cũ.
-  //    - Chỉ đổi margin, không mua/bán CP (ev.margin_delta != 0 và ev.stocks
-  //      rỗng) — thường là nạp thêm tiền trả bớt margin: chấm tròn màu vàng
-  //      (--amber), hướng lên nếu margin tăng, hướng xuống nếu margin giảm.
-  //    - Chia tách CP / cổ tức bằng CP (ev.corp_stocks): ô vuông màu vàng
+  //    - Cổ phiếu thưởng / chia tách (ev.corp_stocks): ô vuông màu vàng
   //      (--amber), để phân biệt với mua/bán thật. ──
   const AMBER = '#f0b64c';
   function updateMarkers() {
@@ -977,7 +932,6 @@ function initChart(hist, events) {
     for (const [key, ev] of currentEventsByPeriod) {
       if (!validTimes.has(key)) continue;
 
-      const hasTrade = Object.values(ev.stocks || {}).some(qty => qty);
       Object.entries(ev.stocks || {}).forEach(([symbol, qty]) => {
         if (!qty) return;
         const isBuy = qty > 0;
@@ -989,18 +943,6 @@ function initChart(hist, events) {
           text: symbol || '',
         });
       });
-
-      // Ngày chỉ đổi margin (nạp/rút tiền trả bớt margin), không có mua/bán CP.
-      if (!hasTrade && ev.margin_delta) {
-        const isUp = ev.margin_delta > 0;
-        markers.push({
-          time: key,
-          position: isUp ? 'belowBar' : 'aboveBar',
-          color: AMBER,
-          shape: 'circle',
-          text: isUp ? 'Vay margin' : 'Trả margin',
-        });
-      }
 
       // Chia tách CP / cổ tức bằng CP.
       const corpSymbols = Object.entries(ev.corp_stocks || {}).filter(([, qty]) => qty);
@@ -1085,9 +1027,9 @@ function initChart(hist, events) {
       }
     }
 
-    // Nếu kỳ đang hover có giao dịch (mua/bán CP, nạp/rút tiền, đổi margin),
+    // Nếu kỳ đang hover có giao dịch (mua/bán CP, nạp/rút tiền),
     // thêm các dòng tương ứng: mỗi mã CP hiện đổi số lượng (dấu +/-), D/W lấy
-    // từ cashflows, margin hiện THAY ĐỔI (delta) chứ không phải số dư tuyệt đối.
+    // từ holdings_history.csv của DNSE.
     const periodEv = currentEventsByPeriod.get(timeToKey(param.time));
     if (periodEv) {
       Object.entries(periodEv.stocks || {}).forEach(([symbol, qty]) => {
@@ -1104,10 +1046,6 @@ function initChart(hist, events) {
       }
       if (periodEv.cash_out) {
         rows += `<div class="tt-row"><span class="tt-lbl">W</span><span class="tt-down">-${fmtVND(periodEv.cash_out)}</span></div>`;
-      }
-      if (periodEv.margin_delta) {
-        const dir = periodEv.margin_delta > 0 ? 'tt-up' : 'tt-down';
-        rows += `<div class="tt-row"><span class="tt-lbl">Margin</span><span class="${dir}">${periodEv.margin_delta > 0 ? '+' : ''}${fmtVND(periodEv.margin_delta)}</span></div>`;
       }
     }
 

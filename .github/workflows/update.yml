@@ -1,10 +1,20 @@
 name: Update Portfolio
 
 on:
+  # DNSE (máy local) đẩy data/dnse/* rồi đẩy manifest.json CUỐI CÙNG -> kích hoạt chạy
+  push:
+    paths:
+      - 'data/dnse/manifest.json'
   schedule:
     # Chạy 1 lần/ngày lúc 11:00 UTC = 18:00 giờ Việt Nam (UTC+7, không có giờ mùa hè)
+    # để cập nhật giá (danh mục lấy từ data/dnse/holdings_history.csv)
     - cron: '0 11 * * *'
   workflow_dispatch: {}   # cho phép bấm "Run workflow" chạy tay để test
+
+# Không cho 2 lần chạy chồng nhau (manifest đẩy đúng lúc lịch chạy)
+concurrency:
+  group: update-portfolio
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -60,4 +70,6 @@ jobs:
           git config user.email "actions@github.com"
           git add data/
           git diff --cached --quiet || git commit -m "Auto update portfolio $(date -u +'%Y-%m-%d %H:%M UTC')"
+          # DNSE có thể vừa đẩy file lên trong lúc workflow chạy -> rebase rồi mới push
+          git pull --rebase
           git push

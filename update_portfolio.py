@@ -1,5 +1,6 @@
 # ── IMPORTS ──────────────────────────────────────────────────────────────────
 import json
+import sys
 from copy import copy
 from datetime import datetime, date
 from pathlib import Path
@@ -40,20 +41,23 @@ _vnstock_env.get_hosting_service = _safe_get_hosting_service
 # ── CẤU HÌNH ─────────────────────────────────────────────────────────────────
 BASE_DIR     = Path(__file__).resolve().parent
 PRICE_HISTORY_FILE     = BASE_DIR / "data" / "price_history.csv"      # giá thô (input/cache), KHÔNG chứa W/D hay kết quả
-CASHFLOWS_FILE          = BASE_DIR / "data" / "cashflows.csv"          # sổ nạp/rút tiền (W/D) — SOURCE OF TRUTH, sửa tay trực tiếp
+DNSE_DIR                = BASE_DIR / "data" / "dnse"                  # DNSE (chạy local) đẩy lên đây, xem DNSE/publish_to_github.py
+HOLDINGS_FILE           = DNSE_DIR / "holdings_history.csv"           # SOURCE OF TRUTH: số lượng từng mã + D/W theo ngày
+DNSE_POSITIONS_FILE     = DNSE_DIR / "positions.csv"                  # vị thế hiện tại của DNSE, chỉ để đối chiếu dòng mới nhất
 PORTFOLIO_HISTORY_FILE  = BASE_DIR / "data" / "portfolio_history.csv"  # output: toàn bộ dữ liệu đã tính, ghi lại mỗi lần chạy
 OUTPUT_FILE  = BASE_DIR / "data" / "MyPortfolio.xlsx"                  # output: bản Excel định dạng đẹp để xem/Drive
 JSON_FILE    = BASE_DIR / "data" / "data.json"   # trong thư mục data/, khớp với fetch('data/data.json') trong index.html và được workflow "git add data/" commit
-TRANSACTIONS_FILE = BASE_DIR / "data" / "transactions.csv"  # sổ giao dịch mua/bán CP + margin — SOURCE OF TRUTH của holdings
 SHEET_NAME   = "Sheet1"
 VNI_START    = "2022-06-01"
 API_TEMPLATE = "https://api.simplize.vn/api/historical/quote/prices/{}?page=0&size=600"
-DEFAULT_STOCK_CODES = ["HPG", "TCB", "FPT", "PNJ", "FRT", "MWG", "MBB"]
+NON_SYMBOL_COLS = {"date", "D", "W"}   # các cột còn lại của holdings_history.csv đều là mã CK
 
 RISK_FREE_RATE = 0.04
 TRADING_DAYS   = 252
 
-# Map cứng mã CP → ngành, dùng cho Allocation/Position Contribution (mục 4)
+# Map mã CP → ngành, dùng cho Allocation/Position Contribution (mục 4).
+# Mã chưa có trong map sẽ hiện "Khác" (xem SECTOR_DEFAULT).
+SECTOR_DEFAULT = "Khác"
 SECTOR_MAP = {
     "HPG": "Thép", "TCB": "Ngân hàng", "MBB": "Ngân hàng",
     "FPT": "Công nghệ", "PNJ": "Bán lẻ", "FRT": "Bán lẻ", "MWG": "Bán lẻ",
@@ -82,6 +86,8 @@ def xirr(cashflows: list) -> float:
     if len(cashflows) < 2:
         return None
     d0 = min(d for d, _ in cashflows)
+    if all(d == d0 for d, _ in cashflows):   # mọi dòng tiền cùng 1 ngày -> XIRR không xác định
+        return None
 
     def npv(rate):
         return sum(cf / (1 + rate) ** ((d - d0).days / 365) for d, cf in cashflows)
@@ -95,18 +101,43 @@ def xirr(cashflows: list) -> float:
             return None
 
 
+# ── 0. ĐỌC holdings_history.csv (DNSE) — danh sách mã + số lượng + D/W ──────
+def load_holdings_history(path: Path):
+    """Đọc data/dnse/holdings_history.csv (ngày dd/mm/yyyy). Trả về (df tăng dần theo
+    ngày, danh sách mã). Mã = mọi cột trừ date, D, W — danh sách động, không giới hạn."""
+    if not path.exists():
+        print(f"❌ Không tìm thấy {path}. DNSE (máy local) phải chạy publish_to_github.py trước.")
+        sys.exit(1)
+    df = pd.read_csv(path, encoding="utf-8-sig")
+    df.columns = [str(c).strip() for c in df.columns]
+    df["date"] = pd.to_datetime(df["date"].astype(str).str.strip(), format="%d/%m/%Y")
+    codes = [c for c in df.columns if c not in NON_SYMBOL_COLS]
+    for c in codes + ["D", "W"]:
+        df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0) if c in df.columns else 0.0
+    df = (df.drop_duplicates(subset="date", keep="last")
+            .sort_values("date").reset_index(drop=True))
+    return df, codes
+
+
+holdings_hist, stock_codes = load_holdings_history(HOLDINGS_FILE)
+if not stock_codes or holdings_hist[stock_codes].abs().sum().sum() == 0:
+    print("ℹ️  holdings_history.csv chưa có mã nào đang/đã giữ — không có gì để tính. Bỏ qua lần chạy này.")
+    sys.exit(0)
+HISTORY_START = holdings_hist["date"].min()   # lịch sử + so sánh VNINDEX bắt đầu từ ngày này
+print(f"📂 holdings_history.csv: {len(holdings_hist)} dòng, mã: {stock_codes}, bắt đầu {HISTORY_START:%d/%m/%Y}")
+
+
 # ── 1. ĐỌC LỊCH SỬ GIÁ (price_history.csv — chỉ giá thô) ────────────────────
 def load_price_history(path: Path) -> pd.DataFrame:
-    cols = ["date", *DEFAULT_STOCK_CODES, "VNINDEX"]
+    cols = ["date", *stock_codes, "VNINDEX"]
     if not path.exists():
-        return pd.DataFrame(columns=cols)
+        return pd.DataFrame(columns=cols).astype({"date": "datetime64[ns]"})
     df = pd.read_csv(path)
     df["date"] = pd.to_datetime(df["date"], format="%d/%m/%Y")
     return df.sort_values("date").reset_index(drop=True)
 
 
-price_hist   = load_price_history(PRICE_HISTORY_FILE)
-stock_codes  = [c for c in price_hist.columns if len(str(c)) == 3] or DEFAULT_STOCK_CODES
+price_hist = load_price_history(PRICE_HISTORY_FILE)
 
 
 # ── 2. LẤY GIÁ CỔ PHIẾU TỪ API ───────────────────────────────────────────────
@@ -143,6 +174,13 @@ df_all = df_prices.merge(df_vni, on="date", how="left")
 # ── 4. NỐI VỚI DỮ LIỆU CŨ, LƯU LẠI price_history.csv (chỉ giá thô) ──────────
 last_update = price_hist["date"].max() if not price_hist.empty else (pd.Timestamp(VNI_START) - pd.Timedelta(days=1))
 
+# Mã mới (chưa có cột trong price_history.csv): lấy giá lịch sử từ API để bù các ngày cũ.
+_new_codes = [c for c in stock_codes if c not in price_hist.columns]
+for _c in _new_codes:
+    price_hist[_c] = price_hist["date"].map(df_prices.set_index("date")[_c])
+if _new_codes:
+    print(f"➕ Mã mới, đã bù giá lịch sử từ API: {_new_codes}")
+
 df_new     = df_all[df_all["date"] > last_update]
 price_hist = (
     pd.concat([price_hist, df_new], ignore_index=True)
@@ -164,39 +202,74 @@ print(f"✅ Đã lưu: {PRICE_HISTORY_FILE} ({len(price_hist_out)} dòng)")
 df_pr = price_hist.sort_values("date", ascending=False).reset_index(drop=True)
 
 
-# ── 5. NẠP/RÚT TIỀN (W/D) — sổ data/cashflows.csv ───────────────────────────
-# Khi cần thêm W/D: mở data/cashflows.csv trên GitHub (web), thêm dòng
-# "date,type,value" (vd: 12/08/2026,D,10000000) rồi commit. Script chỉ ĐỌC
-# file này, không ghi lại. Nếu 1 ngày có nhiều dòng W (hoặc nhiều dòng D),
-# chúng được CỘNG DỒN.
+# ── 5. LỊCH SỬ BẮT ĐẦU TỪ NGÀY ĐẦU TIÊN CỦA holdings_history.csv ────────────
+# price_history.csv vẫn giữ nguyên toàn bộ giá cũ, nhưng danh mục/VNINDEX/lợi nhuận/
+# Sharpe/XIRR chỉ tính từ HISTORY_START trở đi.
+df_pr = df_pr[df_pr["date"] >= HISTORY_START].reset_index(drop=True)
+if df_pr.empty:
+    print(f"ℹ️  Chưa có phiên giao dịch nào từ {HISTORY_START:%d/%m/%Y} — bỏ qua lần chạy này.")
+    sys.exit(0)
+
 df_pr["date_str"] = df_pr["date"].dt.strftime("%d/%m/%Y")
-valid_dates = set(df_pr["date_str"])
+trading_days = np.sort(df_pr["date"].values)   # datetime64, tăng dần
 
 
-def load_cashflows(path: Path) -> pd.DataFrame:
-    if not path.exists():
-        return pd.DataFrame(columns=["date", "type", "value"])
-    df = pd.read_csv(path)
-    return df if not df.empty else pd.DataFrame(columns=["date", "type", "value"])
+def next_trading_day(d):
+    """Phiên giao dịch đầu tiên >= ngày d (D/W rơi vào ngày nghỉ được dồn sang phiên kế tiếp)."""
+    i = np.searchsorted(trading_days, np.datetime64(d), side="left")
+    return pd.Timestamp(trading_days[i]) if i < len(trading_days) else None
 
 
-cashflows = load_cashflows(CASHFLOWS_FILE)
+# ── 5b. SỐ LƯỢNG TỪNG MÃ THEO NGÀY: lấy dòng gần nhất <= ngày đó (P tự điền các ngày giữa)
+_tmp = df_pr[["date"]].copy()
+_tmp["_i"] = df_pr.index
+holdings = (
+    pd.merge_asof(_tmp.sort_values("date"), holdings_hist[["date", *stock_codes]],
+                  on="date", direction="backward")
+    .set_index("_i").reindex(df_pr.index)[stock_codes].fillna(0.0)
+)
 
-# Cảnh báo nếu có ngày W/D không nằm trong price_history.csv (ngày nghỉ giao dịch /
-# gõ sai ngày): dòng đó vẫn vào XIRR & lợi nhuận tổng nhưng sẽ rơi khỏi DR/CR vì
-# không khớp được với dòng giá nào.
-_bad_cf_dates = set(cashflows["date"].astype(str).str.strip()) - valid_dates
-if _bad_cf_dates:
-    print(f"⚠️  cashflows.csv có ngày không có trong price_history.csv: {sorted(_bad_cf_dates)}")
+# ── 5c. D / W TỪ holdings_history.csv ───────────────────────────────────────
+# Mỗi dòng có D hoặc W được gán vào phiên giao dịch đầu tiên >= ngày dòng đó.
+_dw = {}   # phiên -> [D, W]
+_unmapped = []
+for _, r in holdings_hist.iterrows():
+    if not (r["D"] or r["W"]):
+        continue
+    day = next_trading_day(r["date"])
+    if day is None:
+        _unmapped.append(r["date"].strftime("%d/%m/%Y"))
+        continue
+    slot = _dw.setdefault(day, [0.0, 0.0])
+    slot[0] += float(r["D"])
+    slot[1] += float(r["W"])
+if _unmapped:
+    print(f"⚠️  D/W ở các ngày chưa có phiên giao dịch (chưa có giá): {_unmapped} — chưa được tính.")
 
-# Gộp W/D vào bảng làm việc. Nếu 1 ngày có nhiều dòng W (hoặc nhiều dòng D)
-# trong cashflows.csv, chúng được CỘNG DỒN — khác với bản cũ (ghi đè cột, chỉ
-# giữ được 1 giá trị/ngày/loại), đây là điểm sửa đúng hơn khi chuyển sang sổ
-# ghi nhận dạng ledger.
+# ── 6. TÍNH E1 (VECTORIZED): E1 = Σ giá × số lượng ──────────────────────────
+df_pr["E1"] = (df_pr[stock_codes] * holdings[stock_codes]).sum(axis=1)
+
+# Ngày đầu có sẵn cổ phiếu mà không có lệnh mua (mua trước DNSE_FROM_DATE):
+# coi giá trị thị trường của số cổ phiếu đó là vốn nạp ban đầu (D) của ngày đầu.
+_first_idx = df_pr["date"].idxmin()
+_first_day = df_pr.loc[_first_idx, "date"]
+_first_e1  = float(df_pr.loc[_first_idx, "E1"])
+if _first_e1 > 0 and _dw.get(_first_day, [0.0, 0.0])[0] == 0:
+    _dw.setdefault(_first_day, [0.0, 0.0])[0] = _first_e1
+    print(f"ℹ️  Ngày đầu {_first_day:%d/%m/%Y} không có lệnh mua: coi giá trị cổ phiếu {_first_e1:,.0f} là vốn nạp ban đầu (D).")
+
+# Bảng D/W theo (ngày, loại) — dùng chung cho cột D/W, XIRR và events
+_cf_rows = []
+for day, (d_val, w_val) in sorted(_dw.items()):
+    if d_val:
+        _cf_rows.append((day.strftime("%d/%m/%Y"), "D", d_val))
+    if w_val:
+        _cf_rows.append((day.strftime("%d/%m/%Y"), "W", w_val))
+cashflows = pd.DataFrame(_cf_rows, columns=["date", "type", "value"])
+
 if not cashflows.empty:
     wd = (
-        cashflows.assign(value=cashflows["value"].astype(float))
-        .groupby(["date", "type"])["value"].sum()
+        cashflows.groupby(["date", "type"])["value"].sum()
         .unstack(fill_value=0.0)
         .reindex(columns=["W", "D"], fill_value=0.0)
     )
@@ -206,161 +279,67 @@ else:
 df_pr = df_pr.merge(wd, left_on="date_str", right_index=True, how="left")
 df_pr[["W", "D"]] = df_pr[["W", "D"]].fillna(0.0)
 
-
-# ── 6. TÍNH E1 (VECTORIZED) ───────────────────────────────────────────────────
-# Cột nội bộ b,c,d,e,f,g,h tương ứng các mã cổ phiếu theo đúng thứ tự cộng vào
-# E1 ở dưới (HPG, PNJ, TCB, MWG, MBB, FRT, FPT).
-SYMBOL_TO_COL = {
-    "HPG": "b", "PNJ": "c", "TCB": "d", "MWG": "e",
-    "MBB": "f", "FRT": "g", "FPT": "h",
-}
-HOLDING_COLS = ["b", "c", "d", "e", "f", "g", "h", "margin"]
-
-
-def load_transactions(path: Path) -> pd.DataFrame:
-    """Đọc data/transactions.csv — đây là SOURCE OF TRUTH của danh mục.
-    ⚠️ MỖI LẦN GIAO DỊCH: thêm 1 dòng mới vào file này (sửa trực tiếp trên
-    GitHub web, không cần chạy code ở máy). Cột:
-      date     : dd/mm/yyyy, ngày khớp lệnh
-      symbol   : mã CK (HPG, PNJ, TCB, MWG, MBB, FRT, FPT) hoặc MARGIN
-      action   : BUY / SELL (cho cổ phiếu)  hoặc  SET (cho MARGIN — đặt lại
-                 số dư margin hiện tại, vì margin là số dư nợ chứ không phải
-                 số lượng cộng dồn)
-      quantity : số lượng CP (BUY/SELL) hoặc số dư margin mới (SET)
-      note     : ghi chú tự do, không dùng để tính toán
-    """
+# Đối chiếu dòng mới nhất của holdings_history.csv với positions.csv của DNSE
+def check_against_positions(path: Path, hold_hist: pd.DataFrame, codes: list) -> None:
     if not path.exists():
-        raise FileNotFoundError(
-            f"Không tìm thấy {path}. Cần có data/transactions.csv làm nguồn "
-            "dữ liệu giao dịch (xem cột date,symbol,action,quantity,note)."
-        )
-    tx = pd.read_csv(path, dtype={"note": str})
-    if tx.empty:
-        return tx
-    tx["date"] = pd.to_datetime(tx["date"], format="%d/%m/%Y")
-    unknown = ~tx["symbol"].isin(list(SYMBOL_TO_COL) + ["MARGIN"])
-    if unknown.any():
-        bad = tx.loc[unknown, "symbol"].unique().tolist()
-        raise ValueError(f"transactions.csv có symbol không hợp lệ: {bad}")
-    bad_action = ~(
-        ((tx["symbol"] != "MARGIN") & tx["action"].isin(["BUY", "SELL"]))
-        | ((tx["symbol"] == "MARGIN") & (tx["action"] == "SET"))
-    )
-    if bad_action.any():
-        raise ValueError(
-            "transactions.csv có action không hợp lệ ở các dòng:\n"
-            f"{tx.loc[bad_action]}"
-        )
-    return tx.sort_values("date").reset_index(drop=True)
+        print("ℹ️  Không có data/dnse/positions.csv để đối chiếu.")
+        return
+    pos = pd.read_csv(path, encoding="utf-8-sig")
+    if pos.empty or "vị thế" not in pos.columns:
+        actual = {}
+    else:
+        actual = dict(zip(pos["vị thế"], pd.to_numeric(pos["Khối lượng cộng dồn"], errors="coerce").fillna(0.0)))
+    latest = hold_hist.iloc[-1]
+    bad = {c: (float(latest[c]), float(actual.get(c, 0.0)))
+           for c in codes if abs(float(latest[c]) - float(actual.get(c, 0.0))) > 1e-9}
+    bad.update({c: (0.0, float(q)) for c, q in actual.items() if c not in codes and q})
+    if bad:
+        print(f"⚠️  holdings_history (dòng mới nhất) lệch positions.csv: {bad}  (mã: holdings, positions)")
+    else:
+        print("✅ holdings_history (dòng mới nhất) khớp positions.csv.")
 
 
-def get_holdings(dates: pd.Series, transactions: pd.DataFrame) -> pd.DataFrame:
-    """Xây holdings (b,c,d,e,f,g,h,margin) theo từng ngày bằng cách cộng dồn
-    (BUY/SELL) hoặc gán lại (SET, dùng cho margin) các giao dịch theo thời
-    gian, rồi forward-fill sang các ngày sau đó — thay cho breakpoints
-    hard-code trước đây."""
-    result = pd.DataFrame(0.0, index=dates.index, columns=HOLDING_COLS)
-    if transactions.empty:
-        return result
-
-    running = {c: 0.0 for c in HOLDING_COLS}
-    for _, row in transactions.iterrows():
-        if row["symbol"] == "MARGIN":
-            col = "margin"
-            running[col] = float(row["quantity"])
-        else:
-            col = SYMBOL_TO_COL[row["symbol"]]
-            delta = row["quantity"] if row["action"] == "BUY" else -row["quantity"]
-            running[col] += float(delta)
-        result.loc[dates >= row["date"], col] = running[col]
-    return result
+check_against_positions(DNSE_POSITIONS_FILE, holdings_hist, stock_codes)
 
 
-dates_dt = pd.to_datetime(df_pr["date"])
-transactions = load_transactions(TRANSACTIONS_FILE)
-holdings = get_holdings(dates_dt, transactions)
-
-df_pr["E1"] = (
-      df_pr["HPG"] * holdings["b"]
-    - holdings["margin"]
-    + df_pr["PNJ"] * holdings["c"]
-    + df_pr["TCB"] * holdings["d"]
-    + df_pr["MWG"] * holdings["e"]
-    + df_pr["MBB"] * holdings["f"]
-    + df_pr["FRT"] * holdings["g"]
-    + df_pr["FPT"] * holdings["h"]
-)
-
-
-# ── 6b. SỰ KIỆN GIAO DỊCH GỘP THEO NGÀY CHO MARKER + TOOLTIP TRÊN CHART (mục 1) ─
-# Gộp mọi giao dịch (BUY/SELL cổ phiếu + thay đổi margin) xảy ra CÙNG 1 NGÀY
-# thành 1 event/ngày, gồm:
-#   - stocks : {symbol: delta_qty}  — dấu +/- theo BUY/SELL, đã cộng dồn nếu
-#              cùng mã có nhiều dòng trong ngày
-#   - cash   : {D: ..., W: ...}     — lấy từ cashflows.csv đúng ngày đó (không
-#              phải qty×giá đóng cửa), cộng dồn nếu 1 ngày có nhiều dòng D/W
-#   - margin_delta : THAY ĐỔI số dư margin so với trước đó (delta), KHÔNG phải
-#              số dư tuyệt đối ghi trong transactions.csv (vì dòng MARGIN/SET
-#              ghi số dư mới, không phải số tiền vay/trả thêm)
-#
-# Ngày nào chỉ có thay đổi số lượng CP mà KHÔNG có cashflow VÀ KHÔNG có thay
-# đổi margin đi kèm => đó là chia tách CP / trả cổ tức bằng CP (không phải
-# giao dịch mua/bán thực), nên KHÔNG đưa vào events để tránh gây nhiễu
-# marker/tooltip trên chart.
-def build_transaction_events(transactions: pd.DataFrame, wd: pd.DataFrame) -> list:
-    by_date = {}  # date_str (dd/mm/yyyy) -> {"stocks": {...}, "margin_delta": float}
-    running_margin = 0.0
-
-    for _, row in transactions.iterrows():
-        date_str = row["date"].strftime("%d/%m/%Y")
-        slot = by_date.setdefault(date_str, {"stocks": {}, "margin_delta": 0.0})
-
-        if row["symbol"] == "MARGIN":
-            new_margin = float(row["quantity"])
-            slot["margin_delta"] += new_margin - running_margin
-            running_margin = new_margin
-        else:
-            delta = row["quantity"] if row["action"] == "BUY" else -row["quantity"]
-            slot["stocks"][row["symbol"]] = slot["stocks"].get(row["symbol"], 0.0) + float(delta)
+# ── 6b. SỰ KIỆN GIAO DỊCH GỘP THEO NGÀY CHO MARKER + TOOLTIP TRÊN CHART ──────
+# Dựng từ holdings_history.csv: so số lượng mỗi dòng với dòng trước đó (dòng đầu
+# so với 0). Mỗi phiên giao dịch có đổi số lượng -> 1 event:
+#   - stocks / corp_stocks : {symbol: delta_qty}, dấu +/- theo tăng/giảm
+#   - cash_in / cash_out   : D / W của phiên đó
+# Quy tắc: đổi số lượng mà KHÔNG có tiền (D = W = 0) là cổ phiếu thưởng/chia tách
+# (category "corporate_action", đưa vào corp_stocks); còn lại là "trade".
+# Ngày chỉ có D/W mà số lượng không đổi (cổ tức, phí lưu ký) không tạo event.
+def build_transaction_events(hold: pd.DataFrame, codes: list, dw_by_day: dict) -> list:
+    by_day = {}
+    prev = {c: 0.0 for c in codes}
+    for _, row in hold.iterrows():
+        cur = {c: float(row[c]) for c in codes}
+        deltas = {c: cur[c] - prev[c] for c in codes if cur[c] != prev[c]}
+        prev = cur
+        if not deltas:
+            continue
+        day = next_trading_day(row["date"])
+        if day is None:
+            continue
+        slot = by_day.setdefault(day, {})
+        for c, q in deltas.items():
+            slot[c] = slot.get(c, 0.0) + q
 
     events = []
-    for date_str, slot in by_date.items():
-        d_val = float(wd.loc[date_str, "D"]) if (date_str in wd.index and "D" in wd.columns) else 0.0
-        w_val = float(wd.loc[date_str, "W"]) if (date_str in wd.index and "W" in wd.columns) else 0.0
-        stocks = {sym: qty for sym, qty in slot["stocks"].items() if qty != 0}
-        margin_delta = slot["margin_delta"]
-
-        has_stock_change = len(stocks) > 0
-        has_cash = (d_val != 0) or (w_val != 0)
-        has_margin_change = margin_delta != 0
-
-        if not has_stock_change and not has_cash and not has_margin_change:
+    for day, slot in by_day.items():
+        stocks = {c: q for c, q in slot.items() if q != 0}
+        if not stocks:
             continue
-
-        # Phân loại sự kiện để frontend chọn marker phù hợp trên biểu đồ:
-        # - "corporate_action": CP đổi (chia tách / cổ tức bằng CP) nhưng
-        #   không kèm cashflow lẫn thay đổi margin -> KHÔNG phải mua/bán thật.
-        #   Trước đây bị lọc bỏ hoàn toàn, giờ giữ lại nhưng tách riêng khỏi
-        #   "stocks" (dành cho mua/bán thật) sang "corp_stocks".
-        # - "margin_only": chỉ đổi margin (thường là nạp thêm tiền trả bớt nợ
-        #   margin, hoặc vay thêm margin), không có mua/bán CP nào trong ngày.
-        # - "trade": có mua/bán CP thật (kèm hoặc không kèm cash/margin).
-        if has_stock_change and not has_cash and not has_margin_change:
-            category = "corporate_action"
-        elif has_margin_change and not has_stock_change:
-            category = "margin_only"
-        else:
-            category = "trade"
-
-        dt = datetime.strptime(date_str, "%d/%m/%Y")
+        d_val, w_val = dw_by_day.get(day, [0.0, 0.0])
+        category = "trade" if (d_val or w_val) else "corporate_action"
         event = {
-            "date":         dt.strftime("%Y-%m-%d"),
-            "category":     category,
-            "stocks":       {},
-            "corp_stocks":  {},
-            "cash_in":      safe_num(d_val) if d_val else 0.0,
-            "cash_out":     safe_num(w_val) if w_val else 0.0,
-            "margin_delta": safe_num(margin_delta),
+            "date":        day.strftime("%Y-%m-%d"),
+            "category":    category,
+            "stocks":      {},
+            "corp_stocks": {},
+            "cash_in":     safe_num(d_val) if d_val else 0.0,
+            "cash_out":    safe_num(w_val) if w_val else 0.0,
         }
         target_key = "corp_stocks" if category == "corporate_action" else "stocks"
         event[target_key] = {sym: safe_num(qty) for sym, qty in stocks.items()}
@@ -370,14 +349,15 @@ def build_transaction_events(transactions: pd.DataFrame, wd: pd.DataFrame) -> li
     return events
 
 
-transaction_events = build_transaction_events(transactions, wd)
+transaction_events = build_transaction_events(holdings_hist, stock_codes, _dw)
 
 
 # ── 7. TÍNH CÁC CHỈ SỐ HIỆU SUẤT ─────────────────────────────────────────────
 df_pr["E0"] = df_pr["E1"].shift(-1)
 df_pr.loc[df_pr.index[-1], "E0"] = 0
 
-df_pr["DR"]        = ((df_pr["E1"] + df_pr["W"]) - (df_pr["E0"] + df_pr["D"])) / (df_pr["E0"] + df_pr["D"])
+_dr_base           = df_pr["E0"] + df_pr["D"]
+df_pr["DR"]        = (((df_pr["E1"] + df_pr["W"]) - _dr_base) / _dr_base.where(_dr_base != 0)).fillna(0.0)   # không có vốn -> DR = 0
 df_pr["DR(VNI)"]   = df_pr["VNINDEX"].div(df_pr["VNINDEX"].shift(-1)).sub(1).fillna(0)
 df_pr["DR+1"]      = df_pr["DR"] + 1
 df_pr["DR+1(VNI)"] = df_pr["DR(VNI)"] + 1
@@ -482,7 +462,7 @@ df_pr["Correlation_Total"] = risk_total["correlation"]
 
 # ── 7e. XIRR (mục 5) — lãi suất nội bộ trên chuỗi cashflow thật (D/W) ────────
 # Quy ước dấu: D = âm (tiền ra mua CP), W = dương (tiền về từ bán CP) — khớp mục 1,
-# vì danh mục không giữ tiền mặt nên D/W trong cashflows.csv chính là dòng tiền thật.
+# vì danh mục không giữ tiền mặt nên D/W trong holdings_history.csv chính là dòng tiền thật.
 def _parsed_cashflows(cashflows_df: pd.DataFrame) -> list:
     parsed = []
     for _, row in cashflows_df.iterrows():
@@ -501,7 +481,7 @@ def _parsed_cashflows(cashflows_df: pd.DataFrame) -> list:
 
 _cf_parsed = _parsed_cashflows(cashflows)
 
-# XIRR tổng: toàn bộ D/W (cashflows.csv) + 1 dòng cuối = E1 hiện tại (dương), ngày mới nhất
+# XIRR tổng: toàn bộ D/W (holdings_history.csv) + 1 dòng cuối = E1 hiện tại (dương), ngày mới nhất
 _latest_idx  = df_pr.index[0]
 _latest_date = df_pr.loc[_latest_idx, "date"].date()
 _latest_e1   = float(df_pr.loc[_latest_idx, "E1"])
@@ -532,7 +512,9 @@ for year, idx in df_pr.groupby("Year_tmp").groups.items():
     e1_value = float(df_pr.loc[end_idx, "E1"])
 
     year_cfs = [(d, amt) for d, amt in _cf_parsed if d.year == year]
-    cfs = [(e0_date, -e0_value)] + year_cfs + [(e1_date, e1_value)]
+    # Năm đầu tiên: vốn ban đầu đã nằm trong D của ngày đầu, không cộng thêm E0 (tránh tính 2 lần)
+    start_cf = [] if year == df_pr["Year_tmp"].min() else [(e0_date, -e0_value)]
+    cfs = start_cf + year_cfs + [(e1_date, e1_value)]
 
     try:
         xirr_year = xirr(cfs)
@@ -547,7 +529,7 @@ for year, idx in df_pr.groupby("Year_tmp").groups.items():
 
 
 # ── 7f. ALLOCATION + POSITION CONTRIBUTION (mục 4) — chỉ tính ngày mới nhất ──
-def compute_positions(df_pr: pd.DataFrame, holdings: pd.DataFrame, transactions: pd.DataFrame) -> dict:
+def compute_positions(df_pr: pd.DataFrame, holdings: pd.DataFrame, codes: list) -> dict:
     if df_pr.empty:
         return {"as_of_date": None, "items": []}
 
@@ -568,49 +550,52 @@ def compute_positions(df_pr: pd.DataFrame, holdings: pd.DataFrame, transactions:
         v = rows.iloc[0]
         return float(v) if pd.notna(v) else None
 
+    def first_held_date(sym, only_year=None):
+        """Ngày đầu tiên (trong lịch sử, hoặc trong năm only_year) mà mã được nắm giữ (qty > 0)."""
+        mask = holdings[sym] > 0
+        if only_year is not None:
+            mask &= df_pr["Year_tmp"] == only_year
+        dts = df_pr.loc[mask, "date"]
+        return dts.min() if not dts.empty else None
+
     # Bước 1: qty/giá/giá trị từng mã đang có qty > 0 tại ngày mới nhất
     raw_positions = []
     total_value = 0.0
-    for sym in DEFAULT_STOCK_CODES:
-        col = SYMBOL_TO_COL[sym]
-        qty = float(holdings.loc[latest_idx, col])
+    for sym in codes:
+        qty = float(holdings.loc[latest_idx, sym])
         if qty <= 0:
             continue
         price = float(df_pr.loc[latest_idx, sym])
         value = qty * price
         total_value += value
-        raw_positions.append({"symbol": sym, "col": col, "qty": qty, "price": price, "value": value})
+        raw_positions.append({"symbol": sym, "qty": qty, "price": price, "value": value})
 
     # Bước 2: weight + return_year/return_total + contribution
     items = []
     for p in raw_positions:
-        sym, col, qty, price, value = p["symbol"], p["col"], p["qty"], p["price"], p["value"]
+        sym, qty, price, value = p["symbol"], p["qty"], p["price"], p["value"]
         weight = value / total_value if total_value else None
 
         # return_year: giá mới nhất / giá ngày giao dịch đầu tiên của năm hiện tại - 1.
-        # Nếu mã mới mua trong năm (chưa nắm giữ tại ngày đầu năm) thì dùng ngày BUY
-        # đầu tiên của mã đó trong năm thay cho đầu năm.
-        held_at_year_start = year_start_idx is not None and holdings.loc[year_start_idx, col] > 0
+        # Nếu mã mới nắm giữ trong năm (chưa có tại ngày đầu năm) thì dùng ngày đầu
+        # tiên mã đó xuất hiện trong năm thay cho đầu năm.
+        held_at_year_start = year_start_idx is not None and holdings.loc[year_start_idx, sym] > 0
         if held_at_year_start:
             start_price_year = price_on(sym, df_pr.loc[year_start_idx, "date"])
         else:
-            buys_this_year = transactions[
-                (transactions["symbol"] == sym) & (transactions["action"] == "BUY") &
-                (transactions["date"].dt.year == year)
-            ]
-            if not buys_this_year.empty:
-                start_price_year = price_on(sym, buys_this_year["date"].min())
+            first_this_year = first_held_date(sym, only_year=year)
+            if first_this_year is not None:
+                start_price_year = price_on(sym, first_this_year)
             elif year_start_idx is not None:
                 start_price_year = price_on(sym, df_pr.loc[year_start_idx, "date"])
             else:
                 start_price_year = None
         return_year = (price / start_price_year - 1) if start_price_year else None
 
-        # return_total: giá mới nhất / giá tại ngày BUY đầu tiên (toàn bộ lịch sử, từ
-        # transactions.csv, KHÔNG phải từ đầu price_history) - 1.
-        buys_all = transactions[(transactions["symbol"] == sym) & (transactions["action"] == "BUY")]
-        first_buy_total = buys_all["date"].min() if not buys_all.empty else None
-        start_price_total = price_on(sym, first_buy_total) if first_buy_total is not None else None
+        # return_total: giá mới nhất / giá ngày đầu tiên nắm giữ (toàn bộ lịch sử của
+        # holdings_history.csv) - 1.
+        first_total = first_held_date(sym)
+        start_price_total = price_on(sym, first_total) if first_total is not None else None
         return_total = (price / start_price_total - 1) if start_price_total else None
 
         contribution_year  = weight * return_year  if (weight is not None and return_year  is not None) else None
@@ -618,7 +603,7 @@ def compute_positions(df_pr: pd.DataFrame, holdings: pd.DataFrame, transactions:
 
         items.append({
             "symbol": sym,
-            "sector": SECTOR_MAP.get(sym),
+            "sector": SECTOR_MAP.get(sym, SECTOR_DEFAULT),
             "qty":    safe_num(qty),
             "price":  safe_num(price),
             "value":  safe_num(value),
@@ -632,13 +617,13 @@ def compute_positions(df_pr: pd.DataFrame, holdings: pd.DataFrame, transactions:
     return {"as_of_date": latest_date.strftime("%Y-%m-%d"), "items": items}
 
 
-positions_data = compute_positions(df_pr, holdings, transactions)
+positions_data = compute_positions(df_pr, holdings, stock_codes)
 
 
 # ── 8. XUẤT portfolio_history.csv (toàn bộ dữ liệu đã tính) ─────────────────
 # File này là OUTPUT (derived), ghi đè hoàn toàn mỗi lần chạy — không phải nơi
-# lưu trữ dữ liệu gốc nữa. Nguồn dữ liệu gốc thật sự là transactions.csv,
-# price_history.csv và cashflows.csv (3 file đó mới cần backup/không được xoá).
+# lưu trữ dữ liệu gốc nữa. Nguồn dữ liệu gốc thật sự là data/dnse/holdings_history.csv
+# (từ DNSE) và price_history.csv (giá thô) — 2 file đó không được xoá.
 df_pr["date"] = pd.to_datetime(df_pr["date"]).dt.strftime("%d/%m/%Y")
 df_pr = df_pr.drop(columns=["date_str"], errors="ignore")
 
@@ -669,7 +654,7 @@ df_pr["date"] = df_pr["date"].dt.strftime("%d/%m/%Y")
 # chỉ cần các cột số liệu gốc, không lấy 2 cột Sharpe/MaxDrawdown dạng số
 # (chỉ dùng riêng cho JSON dashboard).
 EXPORT_COLUMNS = [
-    "date", "HPG", "TCB", "FPT", "PNJ", "FRT", "MWG", "MBB", "VNINDEX",
+    "date", *stock_codes, "VNINDEX",
     "E1", "W", "E0", "D", "DR", "DR(VNI)", "CR", "MR", "YR", "YR(VNI)",
 ]
 df_export = df_pr[[c for c in EXPORT_COLUMNS if c in df_pr.columns]].copy()
@@ -760,7 +745,7 @@ if date_col:
         for cell in row:
             cell.style = date_style
 
-apply_style_to_cols(ws, ["HPG", "TCB", "MWG", "MBB", "PNJ", "FRT", "FPT", "VNINDEX", "E1", "W", "E0", "D"], int_acc, hm)
+apply_style_to_cols(ws, [*stock_codes, "VNINDEX", "E1", "W", "E0", "D"], int_acc, hm)
 apply_style_to_cols(ws, ["DR", "DR(VNI)", "CR", "MR", "YR", "YR(VNI)", "Max drawdown"], pct_style, hm)
 
 sharpe_ci = hm.get("Sharpe ratio") or (yr_vni_idx + 1 if yr_vni_idx else None)
@@ -777,8 +762,8 @@ for row in ws.iter_rows(min_row=1, max_row=ws.max_row, min_col=1, max_col=ws.max
             cell.border = thin
 
 COLOR_MAP = {
-    "date": "C0FFC0", "HPG": "C0FFC0", "TCB": "C0FFC0", "FPT": "C0FFC0",
-    "PNJ": "CCFFFF", "FRT": "CCFFFF", "MWG": "CCFFFF", "MBB": "CCFFFF",
+    "date": "C0FFC0",
+    **{c: ("C0FFC0" if i % 2 == 0 else "CCFFFF") for i, c in enumerate(stock_codes)},
     "VNINDEX": "FFA500",
     "E1": "4F81BD", "W": "4F81BD", "E0": "4F81BD", "D": "4F81BD",
     "DR": "8E7CC3", "DR(VNI)": "8E7CC3", "CR": "8E7CC3", "MR": "8E7CC3",
@@ -801,8 +786,8 @@ for col in range(2, ws.max_column + 1):
     tgt.alignment = copy(src.alignment)
 
 COLUMN_WIDTHS = {
-    "date": 10.6, "HPG": 8.6, "TCB": 8.6, "MWG": 8.6, "FRT": 8.6,
-    "FPT": 8.6, "MBB": 8.6, "PNJ": 8.6,
+    "date": 10.6,
+    **{c: 8.6 for c in stock_codes},
     "VNINDEX": 8.8, "E1": 11.0, "W": 11.0, "E0": 11.0, "D": 11.0,
     "DR": 8.1, "DR(VNI)": 8.1, "CR": 8.1, "MR": 8.1,
     "YR": 8.1, "YR(VNI)": 8.1, "Sharpe ratio": 11.2, "Max drawdown": 14.2,
@@ -825,7 +810,7 @@ def export_json(df: pd.DataFrame, path: Path, events: list = None, positions: di
     records["date"] = records["date"].dt.strftime("%Y-%m-%d")
 
     keep_cols = [c for c in [
-        "date", "HPG", "TCB", "FPT", "PNJ", "FRT", "MWG", "MBB", "VNINDEX",
+        "date", *stock_codes, "VNINDEX",
         "E1", "W", "E0", "D", "DR", "DR(VNI)", "CR", "CR(VNI)",
         "MR", "YR", "YR(VNI)", "Sharpe", "MaxDrawdown",
         "Sharpe_Total", "MaxDrawdown_Total",
@@ -859,7 +844,7 @@ def export_json(df: pd.DataFrame, path: Path, events: list = None, positions: di
         "profit_total": safe_num(profit_total),
     }
 
-    payload = {"summary": summary, "history": history}
+    payload = {"summary": summary, "stock_codes": stock_codes, "history": history}
     if events is not None:
         payload["events"] = events
     if positions is not None:
